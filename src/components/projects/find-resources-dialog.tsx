@@ -256,7 +256,7 @@ export function FindResourcesDialog({
                                 className={cn(
                                   'mt-0.5 shrink-0 p-0.5 rounded transition-colors',
                                   isProducerOnly
-                                    ? 'text-amber-500 dark:text-amber-400'
+                                    ? 'text-[#3E0BE5] dark:text-purple-400'
                                     : 'text-neutral-300 dark:text-neutral-600 hover:text-neutral-500 dark:hover:text-neutral-400'
                                 )}
                               >

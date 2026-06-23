@@ -148,7 +148,7 @@ export function ProjectLinks({
             <ExternalLink size={11} className="shrink-0 text-neutral-400" />
             {link.producer_only && (
               <span title="Hidden from contributors">
-                <EyeOff size={11} className="shrink-0 text-amber-500" />
+                <EyeOff size={11} className="shrink-0 text-[#3E0BE5]" />
               </span>
             )}
           </a>

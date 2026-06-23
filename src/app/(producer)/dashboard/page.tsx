@@ -197,7 +197,7 @@ export default async function DashboardPage() {
             {projectMetrics.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={8} className="text-center text-neutral-500 py-8">
-                  No projects yet. <Link href="/projects" className="text-amber-600 hover:underline">Create one</Link>
+                  No projects yet. <Link href="/projects" className="text-[#3E0BE5] hover:underline">Create one</Link>
                 </TableCell>
               </TableRow>
             ) : (
@@ -205,11 +205,11 @@ export default async function DashboardPage() {
                 const isNearBudget = project.budgetPct !== null && project.budgetPct >= 80
                 const isOverBudget = project.budgetPct !== null && project.budgetPct >= 100
                 return (
-                  <TableRow key={project.id} className={isOverBudget ? 'bg-red-50' : isNearBudget ? 'bg-amber-50' : ''}>
+                  <TableRow key={project.id} className={isOverBudget ? 'bg-red-50' : isNearBudget ? 'bg-purple-50' : ''}>
                     <TableCell>
                       <Link
                         href={`/projects/${project.id}`}
-                        className="font-medium text-neutral-900 hover:text-amber-600 transition-colors"
+                        className="font-medium text-neutral-900 hover:text-[#3E0BE5] transition-colors"
                       >
                         {project.name}
                       </Link>
@@ -232,7 +232,7 @@ export default async function DashboardPage() {
                     </TableCell>
                     <TableCell className="text-right">
                       {project.budget_value ? (
-                        <span className={`font-mono text-sm ${isOverBudget ? 'text-red-600 font-semibold' : isNearBudget ? 'text-amber-600 font-semibold' : 'text-neutral-700'}`}>
+                        <span className={`font-mono text-sm ${isOverBudget ? 'text-red-600 font-semibold' : isNearBudget ? 'text-[#3E0BE5] font-semibold' : 'text-neutral-700'}`}>
                           {project.budget_type === 'hours'
                             ? `${formatHours(project.budgetRemaining ?? 0)} left`
                             : `${formatCurrency(project.budgetRemaining ?? 0)} left`}

@@ -65,14 +65,14 @@ function marginTextColor(pct: number | null) {
 function marginCardStyle(pct: number | null) {
   if (pct === null) return 'bg-white border-neutral-200'
   if (pct > 20) return 'bg-green-50 border-green-200'
-  if (pct >= 5) return 'bg-amber-50 border-amber-200'
+  if (pct >= 5) return 'bg-purple-50 border-purple-200'
   return 'bg-red-50 border-red-200'
 }
 
 function usageStyle(pct: number | null) {
   if (pct === null) return ''
   if (pct >= 100) return 'text-red-600'
-  if (pct >= 80) return 'text-[#D97706]'
+  if (pct >= 80) return 'text-[#3E0BE5]'
   return 'text-neutral-700'
 }
 

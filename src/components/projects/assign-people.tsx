@@ -122,20 +122,20 @@ export function AssignPeople({ projectId, assigned, available }: AssignPeoplePro
                   </td>
                   <td className="px-4 py-2.5 text-right font-mono text-neutral-700">
                     {iRate != null ? (
-                      <span className={hasOverride && person.internal_rate_override !== null ? 'text-amber-600' : ''}>
+                      <span className={hasOverride && person.internal_rate_override !== null ? 'text-[#3E0BE5]' : ''}>
                         ${Number(iRate).toFixed(2)}
                         {person.internal_rate_override !== null && (
-                          <span className="text-xs text-amber-500 ml-1">override</span>
+                          <span className="text-xs text-[#3E0BE5] ml-1">override</span>
                         )}
                       </span>
                     ) : '—'}
                   </td>
                   <td className="px-4 py-2.5 text-right font-mono text-neutral-700">
                     {eRate != null ? (
-                      <span className={hasOverride && person.external_rate_override !== null ? 'text-amber-600' : ''}>
+                      <span className={hasOverride && person.external_rate_override !== null ? 'text-[#3E0BE5]' : ''}>
                         ${Number(eRate).toFixed(2)}
                         {person.external_rate_override !== null && (
-                          <span className="text-xs text-amber-500 ml-1">override</span>
+                          <span className="text-xs text-[#3E0BE5] ml-1">override</span>
                         )}
                       </span>
                     ) : '—'}

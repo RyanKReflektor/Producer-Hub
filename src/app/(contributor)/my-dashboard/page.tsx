@@ -15,7 +15,7 @@ const STATUS_LABEL: Record<string, string> = {
 const STATUS_COLOR: Record<string, string> = {
   active: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
   completed: 'bg-neutral-100 text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400',
-  on_hold: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+  on_hold: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
 }
 
 export default async function ContributorDashboard() {

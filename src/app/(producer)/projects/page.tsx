@@ -146,7 +146,7 @@ export default function ProjectsPage() {
                   <TableCell>
                     <Link
                       href={`/projects/${project.id}`}
-                      className="font-medium text-neutral-900 hover:text-amber-600 transition-colors"
+                      className="font-medium text-neutral-900 hover:text-[#3E0BE5] transition-colors"
                     >
                       {project.name}
                     </Link>

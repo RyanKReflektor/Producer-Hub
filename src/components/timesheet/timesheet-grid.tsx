@@ -218,7 +218,7 @@ export function TimesheetGrid({
             <span className="text-xs text-red-600">{unlockError}</span>
           )}
           {isUnlocked && (
-            <span className="text-xs text-amber-600 font-medium">Editing — re-submit to request approval.</span>
+            <span className="text-xs text-[#3E0BE5] font-medium">Editing — re-submit to request approval.</span>
           )}
         </div>
 

@@ -97,7 +97,7 @@ export function BurnChart({ data, currency = 'CAD' }: BurnChartProps) {
             />
             <Bar
               dataKey="value"
-              fill="#D97706"
+              fill="#3E0BE5"
               radius={[2, 2, 0, 0]}
               maxBarSize={48}
             />

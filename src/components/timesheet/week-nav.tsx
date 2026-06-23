@@ -42,7 +42,7 @@ export function WeekNav({ monday, currentMonday }: WeekNavProps) {
           {format(mondayDate, 'MMM d')} &ndash; {format(sunday, 'MMM d, yyyy')}
         </div>
         {isCurrentWeek && (
-          <div className="text-xs text-amber-600 font-medium">This week</div>
+          <div className="text-xs text-[#3E0BE5] font-medium">This week</div>
         )}
       </div>
 
@@ -56,7 +56,7 @@ export function WeekNav({ monday, currentMonday }: WeekNavProps) {
       {!isCurrentWeek && (
         <button
           onClick={() => router.push('/timesheet')}
-          className="text-xs text-amber-600 hover:text-amber-700 font-medium ml-1"
+          className="text-xs text-[#3E0BE5] hover:text-purple-700 font-medium ml-1"
         >
           Today
         </button>

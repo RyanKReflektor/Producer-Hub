@@ -131,7 +131,11 @@ export default async function ProjectDetailPage({
   const totalExternalCost = (timeEntries || []).reduce((sum, e) =>
     sum + Number(e.hours) * effectiveExternalRate(e.person_id), 0)
 
-  // Budget remaining (overview)
+  // Total expenses for budget calc
+  const totalExpenses = (expensesData || []).reduce(
+    (sum, e) => sum + Number(e.amount) * Number(e.quantity), 0)
+
+  // Budget remaining (overview) — includes labour + expenses
   let budgetRemaining: number | null = null
   let budgetPct: number | null = null
   if (project.budget_value) {
@@ -139,8 +143,9 @@ export default async function ProjectDetailPage({
       budgetRemaining = project.budget_value - totalHours
       budgetPct = (totalHours / project.budget_value) * 100
     } else if (project.budget_type === 'dollars') {
-      budgetRemaining = project.budget_value - totalInternalCost
-      budgetPct = (totalInternalCost / project.budget_value) * 100
+      const actualCost = totalInternalCost + totalExpenses
+      budgetRemaining = project.budget_value - actualCost
+      budgetPct = (actualCost / project.budget_value) * 100
     }
   }
 
@@ -303,14 +308,14 @@ export default async function ProjectDetailPage({
             </div>
             <div className={`border rounded-[4px] p-4 ${
               budgetPct !== null && budgetPct >= 100 ? 'bg-red-50 border-red-200' :
-              budgetPct !== null && budgetPct >= 80 ? 'bg-amber-50 border-amber-200' :
+              budgetPct !== null && budgetPct >= 80 ? 'bg-purple-50 border-purple-200' :
               'bg-white border-neutral-200'
             }`}>
               <p className="text-xs text-neutral-500 uppercase tracking-wider mb-1">Budget Remaining</p>
               {project.budget_value ? (
                 <p className={`text-2xl font-mono font-semibold ${
                   budgetPct !== null && budgetPct >= 100 ? 'text-red-600' :
-                  budgetPct !== null && budgetPct >= 80 ? 'text-amber-600' :
+                  budgetPct !== null && budgetPct >= 80 ? 'text-[#3E0BE5]' :
                   'text-neutral-900'
                 }`}>
                   {project.budget_type === 'hours'
