@@ -92,7 +92,7 @@ export async function discoverResources(
       ? searchNotion(projectName, clientName, process.env.NOTION_API_KEY)
       : Promise.reject(new Error('__UNCONFIGURED__')),
     process.env.GOOGLE_SA_EMAIL && process.env.GOOGLE_SA_PRIVATE_KEY
-      ? searchDrive(projectName, clientName, process.env.GOOGLE_SA_EMAIL, process.env.GOOGLE_SA_PRIVATE_KEY)
+      ? searchDrive(projectName, clientName, extraTerms, process.env.GOOGLE_SA_EMAIL, process.env.GOOGLE_SA_PRIVATE_KEY)
       : Promise.reject(new Error('__UNCONFIGURED__')),
   ])
 
@@ -196,27 +196,33 @@ async function searchNotion(projectName: string, clientName: string, key: string
 async function searchDrive(
   projectName: string,
   clientName: string,
+  extraTerms: string[],
   saEmail: string,
   saPrivateKey: string,
 ): Promise<DiscoveryMatch[]> {
   const token = await getDriveAccessToken(saEmail, saPrivateKey)
   const escape = (s: string) => s.replace(/'/g, "\\'")
 
-  // Build name-contains clauses for project name and client name
-  const nameClauses = [projectName, clientName]
-    .filter(Boolean)
-    .map(t => `name contains '${escape(t)}'`)
-    .join(' or ')
+  // All terms: project, client, plus anything the user typed
+  const allTerms = [projectName, clientName, ...extraTerms].filter(Boolean)
+  const nameClauses = allTerms.map(t => `name contains '${escape(t)}'`).join(' or ')
 
-  const q = encodeURIComponent(`(${nameClauses}) and trashed = false`)
-  const res = await fetch(
-    `https://www.googleapis.com/drive/v3/files?q=${q}&pageSize=10&fields=files(id,name,webViewLink,mimeType)`,
-    { headers: { Authorization: `Bearer ${token}` } },
-  ).then(r => r.json())
+  const url = new URL('https://www.googleapis.com/drive/v3/files')
+  url.searchParams.set('q', `(${nameClauses}) and trashed = false`)
+  url.searchParams.set('pageSize', '20')
+  url.searchParams.set('fields', 'files(id,name,webViewLink,mimeType)')
+  // Include Shared Drives / Team Drives
+  url.searchParams.set('includeItemsFromAllDrives', 'true')
+  url.searchParams.set('supportsAllDrives', 'true')
+  url.searchParams.set('corpora', 'allDrives')
+
+  const res = await fetch(url.toString(), {
+    headers: { Authorization: `Bearer ${token}` },
+  }).then(r => r.json())
 
   if (res.error) throw new Error(res.error.message ?? 'Drive API error')
 
-  return ((res.files ?? []) as any[]).slice(0, 5).map(f => ({
+  return ((res.files ?? []) as any[]).slice(0, 8).map(f => ({
     id: `drive-${f.id}`,
     tool: 'drive' as const,
     label: f.name,
