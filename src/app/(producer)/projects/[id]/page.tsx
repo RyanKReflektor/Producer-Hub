@@ -44,22 +44,41 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
 
   if (!project) notFound()
 
-  // Get assignments with profiles
+  // Get assignments (scalar only — no PostgREST embeds)
   const { data: assignments } = await supabase
     .from('project_assignments')
-    .select('*, profile:profiles(id, name, email, internal_rate, external_rate)')
+    .select('id, person_id, project_id, internal_rate_override, external_rate_override')
     .eq('project_id', params.id)
 
-  // Get all time entries (submitted + approved)
+  // Get all time entries (submitted + approved) — scalar only
   const { data: timeEntries } = await supabase
     .from('time_entries')
-    .select('*, profile:profiles(name, internal_rate, external_rate)')
+    .select('id, person_id, project_id, hours, week_number, year, status, submitted_at, date')
     .eq('project_id', params.id)
     .in('status', ['submitted', 'approved'])
     .order('year', { ascending: true })
     .order('week_number', { ascending: true })
 
-  // Get all active profiles (for assignment dialog)
+  // Get pending entries for approval — scalar only
+  const { data: pendingEntries } = await supabase
+    .from('time_entries')
+    .select('id, person_id, project_id, hours, week_number, year, status, submitted_at')
+    .eq('project_id', params.id)
+    .eq('status', 'submitted')
+    .order('submitted_at', { ascending: false })
+
+  // Gather unique person IDs for profile lookup
+  const allPersonIds = [...new Set([
+    ...(assignments || []).map(a => a.person_id),
+    ...(timeEntries || []).map(e => e.person_id),
+    ...(pendingEntries || []).map(e => e.person_id),
+  ])]
+  const { data: entryProfiles } = allPersonIds.length > 0
+    ? await supabase.from('profiles').select('id, name, email, person_type, internal_rate, external_rate').in('id', allPersonIds)
+    : { data: [] }
+  const profileMap = new Map((entryProfiles || []).map(p => [p.id, p]))
+
+  // Get all active contributors (for assignment dialog)
   const { data: allProfiles } = await supabase
     .from('profiles')
     .select('id, name, email, person_type, internal_rate, external_rate, active, role')
@@ -67,31 +86,26 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
     .eq('role', 'contributor')
     .order('name')
 
-  // Get pending entries for approval
-  const { data: pendingEntries } = await supabase
-    .from('time_entries')
-    .select('*, profile:profiles(name)')
-    .eq('project_id', params.id)
-    .eq('status', 'submitted')
-    .order('submitted_at', { ascending: false })
-
-  // Get all assignments for rate lookup
+  // Assignment map keyed by person_id for rate lookups
   const assignmentMap = new Map(
     (assignments || []).map(a => [a.person_id, a])
   )
 
+  const effectiveInternalRate = (personId: string) => {
+    const a = assignmentMap.get(personId)
+    return Number(a?.internal_rate_override ?? profileMap.get(personId)?.internal_rate ?? 0)
+  }
+  const effectiveExternalRate = (personId: string) => {
+    const a = assignmentMap.get(personId)
+    return Number(a?.external_rate_override ?? profileMap.get(personId)?.external_rate ?? 0)
+  }
+
   // Calculate totals
   const totalHours = (timeEntries || []).reduce((sum, e) => sum + Number(e.hours), 0)
-  const totalInternalCost = (timeEntries || []).reduce((sum, e) => {
-    const a = assignmentMap.get(e.person_id)
-    const rate = a?.internal_rate_override ?? e.profile?.internal_rate ?? 0
-    return sum + (Number(e.hours) * Number(rate))
-  }, 0)
-  const totalExternalCost = (timeEntries || []).reduce((sum, e) => {
-    const a = assignmentMap.get(e.person_id)
-    const rate = a?.external_rate_override ?? e.profile?.external_rate ?? 0
-    return sum + (Number(e.hours) * Number(rate))
-  }, 0)
+  const totalInternalCost = (timeEntries || []).reduce((sum, e) =>
+    sum + Number(e.hours) * effectiveInternalRate(e.person_id), 0)
+  const totalExternalCost = (timeEntries || []).reduce((sum, e) =>
+    sum + Number(e.hours) * effectiveExternalRate(e.person_id), 0)
 
   // Budget remaining
   let budgetRemaining: number | null = null
@@ -112,19 +126,13 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
   for (const entry of (timeEntries || [])) {
     const key = `${entry.year}-${entry.week_number}` as WeekKey
     if (!weekMap.has(key)) {
-      weekMap.set(key, {
-        week_label: `W${entry.week_number}`,
-        hours: 0,
-        internal_cost: 0,
-      })
+      weekMap.set(key, { week_label: `W${entry.week_number}`, hours: 0, internal_cost: 0 })
     }
-    const a = assignmentMap.get(entry.person_id)
-    const rate = a?.internal_rate_override ?? entry.profile?.internal_rate ?? 0
     const existing = weekMap.get(key)!
     weekMap.set(key, {
       ...existing,
       hours: existing.hours + Number(entry.hours),
-      internal_cost: existing.internal_cost + Number(entry.hours) * Number(rate),
+      internal_cost: existing.internal_cost + Number(entry.hours) * effectiveInternalRate(entry.person_id),
     })
   }
   const weeklyBurn = Array.from(weekMap.values())
@@ -134,21 +142,18 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
   for (const entry of (timeEntries || [])) {
     if (!personMap.has(entry.person_id)) {
       personMap.set(entry.person_id, {
-        name: entry.profile?.name ?? 'Unknown',
+        name: profileMap.get(entry.person_id)?.name ?? 'Unknown',
         hours: 0,
         internal_cost: 0,
         external_cost: 0,
       })
     }
-    const a = assignmentMap.get(entry.person_id)
-    const iRate = a?.internal_rate_override ?? entry.profile?.internal_rate ?? 0
-    const eRate = a?.external_rate_override ?? entry.profile?.external_rate ?? 0
     const existing = personMap.get(entry.person_id)!
     personMap.set(entry.person_id, {
       ...existing,
       hours: existing.hours + Number(entry.hours),
-      internal_cost: existing.internal_cost + Number(entry.hours) * Number(iRate),
-      external_cost: existing.external_cost + Number(entry.hours) * Number(eRate),
+      internal_cost: existing.internal_cost + Number(entry.hours) * effectiveInternalRate(entry.person_id),
+      external_cost: existing.external_cost + Number(entry.hours) * effectiveExternalRate(entry.person_id),
     })
   }
   const personBreakdown = Array.from(personMap.values())
@@ -162,7 +167,6 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
     totalHours: number
     submittedAt: string
     entryIds: string[]
-    entries: typeof pendingEntries
   }
   const pendingGroups = new Map<string, EntryGroup>()
   for (const entry of (pendingEntries || [])) {
@@ -170,34 +174,35 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
     if (!pendingGroups.has(key)) {
       pendingGroups.set(key, {
         key,
-        personName: entry.profile?.name ?? 'Unknown',
+        personName: profileMap.get(entry.person_id)?.name ?? 'Unknown',
         week: entry.week_number,
         year: entry.year,
         totalHours: 0,
         submittedAt: entry.submitted_at ?? '',
         entryIds: [],
-        entries: [],
       })
     }
     const g = pendingGroups.get(key)!
     g.totalHours += Number(entry.hours)
     g.entryIds.push(entry.id)
-    g.entries = [...(g.entries || []), entry]
   }
   const approvalGroups = Array.from(pendingGroups.values())
 
   // Build assigned people list for the panel
-  const assignedPeople = (assignments || []).map(a => ({
-    assignment_id: a.id,
-    person_id: a.person_id,
-    name: (a.profile as any)?.name ?? 'Unknown',
-    email: (a.profile as any)?.email ?? '',
-    person_type: (a.profile as any)?.person_type ?? null,
-    internal_rate_override: a.internal_rate_override,
-    external_rate_override: a.external_rate_override,
-    default_internal_rate: (a.profile as any)?.internal_rate ?? null,
-    default_external_rate: (a.profile as any)?.external_rate ?? null,
-  }))
+  const assignedPeople = (assignments || []).map(a => {
+    const p = profileMap.get(a.person_id)
+    return {
+      assignment_id: a.id,
+      person_id: a.person_id,
+      name: p?.name ?? 'Unknown',
+      email: p?.email ?? '',
+      person_type: p?.person_type ?? null,
+      internal_rate_override: a.internal_rate_override,
+      external_rate_override: a.external_rate_override,
+      default_internal_rate: p?.internal_rate ?? null,
+      default_external_rate: p?.external_rate ?? null,
+    }
+  })
 
   const assignedIds = new Set(assignedPeople.map(a => a.person_id))
   const availablePeople = (allProfiles || []).filter(p => !assignedIds.has(p.id))

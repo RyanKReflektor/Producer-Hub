@@ -20,6 +20,7 @@ export async function approveEntries(entryIds: string[]) {
   if (error) throw new Error(error.message)
   revalidatePath('/approvals')
   revalidatePath('/dashboard')
+  revalidatePath('/projects', 'layout')
 }
 
 export async function rejectEntries(entryIds: string[]) {
@@ -34,4 +35,5 @@ export async function rejectEntries(entryIds: string[]) {
 
   if (error) throw new Error(error.message)
   revalidatePath('/approvals')
+  revalidatePath('/projects', 'layout')
 }
