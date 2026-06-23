@@ -92,7 +92,7 @@ export async function discoverResources(
       ? searchNotion(projectName, clientName, process.env.NOTION_API_KEY)
       : Promise.reject(new Error('__UNCONFIGURED__')),
     process.env.GOOGLE_SA_EMAIL && process.env.GOOGLE_SA_PRIVATE_KEY
-      ? searchDrive(projectName, process.env.GOOGLE_SA_EMAIL, process.env.GOOGLE_SA_PRIVATE_KEY)
+      ? searchDrive(projectName, clientName, process.env.GOOGLE_SA_EMAIL, process.env.GOOGLE_SA_PRIVATE_KEY)
       : Promise.reject(new Error('__UNCONFIGURED__')),
   ])
 
@@ -195,20 +195,28 @@ async function searchNotion(projectName: string, clientName: string, key: string
 
 async function searchDrive(
   projectName: string,
+  clientName: string,
   saEmail: string,
   saPrivateKey: string,
 ): Promise<DiscoveryMatch[]> {
   const token = await getDriveAccessToken(saEmail, saPrivateKey)
-  const escaped = projectName.replace(/'/g, "\\'")
-  const q = encodeURIComponent(`fullText contains '${escaped}' and trashed = false`)
+  const escape = (s: string) => s.replace(/'/g, "\\'")
+
+  // Build name-contains clauses for project name and client name
+  const nameClauses = [projectName, clientName]
+    .filter(Boolean)
+    .map(t => `name contains '${escape(t)}'`)
+    .join(' or ')
+
+  const q = encodeURIComponent(`(${nameClauses}) and trashed = false`)
   const res = await fetch(
-    `https://www.googleapis.com/drive/v3/files?q=${q}&pageSize=5&fields=files(id,name,webViewLink)`,
+    `https://www.googleapis.com/drive/v3/files?q=${q}&pageSize=10&fields=files(id,name,webViewLink,mimeType)`,
     { headers: { Authorization: `Bearer ${token}` } },
   ).then(r => r.json())
 
   if (res.error) throw new Error(res.error.message ?? 'Drive API error')
 
-  return ((res.files ?? []) as any[]).slice(0, 3).map(f => ({
+  return ((res.files ?? []) as any[]).slice(0, 5).map(f => ({
     id: `drive-${f.id}`,
     tool: 'drive' as const,
     label: f.name,
