@@ -84,6 +84,18 @@ export interface ProjectBurnSummary {
   }[]
 }
 
+export type LinkTool = 'slack' | 'notion' | 'drive' | 'other'
+
+export interface ProjectLink {
+  id: string
+  project_id: string
+  tool: LinkTool
+  label: string
+  url: string
+  added_by: string
+  added_at: string
+}
+
 // Phase 2
 export interface ResourceAllocation {
   id: string

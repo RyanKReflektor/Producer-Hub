@@ -16,7 +16,8 @@ import { BurnChart } from '@/components/projects/burn-chart'
 import { ProjectDetailActions } from '@/components/projects/project-detail-actions'
 import { ApproveActions } from '@/components/approvals/approve-actions'
 import { AssignPeople } from '@/components/projects/assign-people'
-import type { ProjectStatus } from '@/lib/types'
+import { ProjectLinks } from '@/components/projects/project-links'
+import type { ProjectStatus, ProjectLink } from '@/lib/types'
 import { format } from 'date-fns'
 
 function StatusBadge({ status }: { status: ProjectStatus }) {
@@ -49,6 +50,13 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
     .from('project_assignments')
     .select('id, person_id, project_id, internal_rate_override, external_rate_override')
     .eq('project_id', params.id)
+
+  // Get project links
+  const { data: projectLinks } = await supabase
+    .from('project_links')
+    .select('*')
+    .eq('project_id', params.id)
+    .order('added_at', { ascending: true })
 
   // Get all time entries (submitted + approved) — scalar only
   const { data: timeEntries } = await supabase
@@ -273,6 +281,15 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
         projectId={project.id}
         assigned={assignedPeople}
         available={availablePeople as any}
+      />
+
+      {/* Resources */}
+      <ProjectLinks
+        projectId={project.id}
+        projectName={project.name}
+        clientName={project.client}
+        initialLinks={(projectLinks ?? []) as ProjectLink[]}
+        isProducer={true}
       />
 
       {/* People breakdown */}
