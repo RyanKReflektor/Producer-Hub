@@ -233,7 +233,8 @@ export function FindResourcesDialog({
                                   value={sel?.label ?? match.label}
                                   onChange={e => setLabel(match.id, e.target.value)}
                                   onClick={e => e.stopPropagation()}
-                                  className="w-full text-sm font-medium text-neutral-900 dark:text-neutral-100 bg-inherit border-none outline-none focus:underline"
+                                  className="w-full text-sm font-medium text-neutral-900 dark:text-neutral-100 appearance-none border-none outline-none focus:underline"
+                                  style={{ background: 'none' }}
                                 />
                                 <p className="text-xs text-neutral-400 dark:text-neutral-500 truncate mt-0.5">{match.url}</p>
                               </div>
