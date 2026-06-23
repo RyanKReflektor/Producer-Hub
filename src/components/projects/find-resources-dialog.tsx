@@ -134,7 +134,10 @@ export function FindResourcesDialog({
 
   return (
     <Dialog open={open} onOpenChange={v => { if (!v) handleClose() }}>
-      <DialogContent className={cn('max-w-lg max-h-[85vh]', dark && 'dark')}>
+      <DialogContent
+        className={cn('max-w-lg max-h-[85vh]', dark && 'dark')}
+        style={dark ? { backgroundColor: '#111111', color: '#f0f0f0' } : undefined}
+      >
         <DialogHeader>
           <DialogTitle className="dark:text-white">Find Resources</DialogTitle>
         </DialogHeader>
@@ -214,15 +217,15 @@ export function FindResourcesDialog({
                               className={cn(
                                 'flex items-start gap-3 p-2.5 rounded-[4px] border cursor-pointer transition-colors',
                                 isSelected
-                                  ? 'border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800'
-                                  : 'border-neutral-100 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800/40 opacity-60'
+                                  ? 'border-[#3E0BE5] bg-[#3E0BE5]/8 dark:bg-[#3E0BE5]/15'
+                                  : 'border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800/40 opacity-50'
                               )}
                             >
                               <input
                                 type="checkbox"
                                 checked={isSelected}
                                 onChange={() => toggle(match.id)}
-                                className="mt-0.5 accent-neutral-900 dark:accent-neutral-100"
+                                className="mt-0.5 accent-[#3E0BE5]"
                               />
                               <div className="flex-1 min-w-0">
                                 <input
