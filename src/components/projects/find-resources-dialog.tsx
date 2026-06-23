@@ -74,7 +74,7 @@ export function FindResourcesDialog({
         const filtered = { ...r, matches: r.matches.filter(m => !existingUrls.has(m.url)) }
         setResult(filtered)
         const map: SelectionMap = new Map()
-        filtered.matches.forEach(m => map.set(m.id, { match: m, label: m.label, selected: true }))
+        filtered.matches.forEach(m => map.set(m.id, { match: m, label: m.label, selected: false }))
         setSelection(map)
         setStatus('done')
       })
@@ -177,6 +177,25 @@ export function FindResourcesDialog({
             <div className="overflow-y-auto min-h-0 space-y-4 flex-1 pr-1">
               {grouped.length > 0 ? (
                 <div className="space-y-3">
+                  {/* Select all / deselect all */}
+                  {result!.matches.length > 0 && (() => {
+                    const allSelected = result!.matches.every(m => selection.get(m.id)?.selected)
+                    return (
+                      <div className="flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() => setSelection(prev => {
+                            const next = new Map(prev)
+                            prev.forEach((v, k) => next.set(k, { ...v, selected: !allSelected }))
+                            return next
+                          })}
+                          className="text-xs text-neutral-400 dark:text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 transition-colors"
+                        >
+                          {allSelected ? 'Deselect all' : 'Select all'}
+                        </button>
+                      </div>
+                    )
+                  })()}
                   {grouped.map(({ tool, items }) => (
                     <div key={tool}>
                       <div className="flex items-center gap-1.5 mb-1.5">
