@@ -48,7 +48,7 @@ export default function LoginPage() {
         <div>
           <div className="flex items-center gap-3 mb-16">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo.png" alt="Spectra" className="w-8 h-8 rounded-[2px]" />
+            <img src="/logo.svg" alt="Spectra" className="w-8 h-8 rounded-[2px]" />
             <span className="text-white font-semibold text-xl tracking-tight">Spectra</span>
           </div>
           <h1 className="text-white text-4xl font-bold leading-tight mb-4">
@@ -68,7 +68,7 @@ export default function LoginPage() {
         <div className="w-full max-w-sm">
           <div className="lg:hidden flex items-center gap-2 mb-8">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo.png" alt="Spectra" className="w-6 h-6 rounded-[2px]" />
+            <img src="/logo.svg" alt="Spectra" className="w-6 h-6 rounded-[2px]" />
             <span className="font-semibold text-lg">Spectra</span>
           </div>
 

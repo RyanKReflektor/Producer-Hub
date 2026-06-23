@@ -54,7 +54,7 @@ export function Sidebar({ profile, role }: SidebarProps) {
       {/* Logo */}
       <div className="flex items-center gap-2.5 px-4 py-5 border-b border-neutral-800">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/logo.png" alt="Spectra" className="w-6 h-6 shrink-0 rounded-[2px]" />
+        <img src="/logo.svg" alt="Spectra" className="w-6 h-6 shrink-0 rounded-[2px]" />
         <span className="text-white font-semibold text-sm tracking-tight">Spectra</span>
       </div>
 
