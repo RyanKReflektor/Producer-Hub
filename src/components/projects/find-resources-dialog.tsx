@@ -39,8 +39,10 @@ export function FindResourcesDialog({
   const { theme } = useTheme()
   const dark = theme === 'dark'
 
+  const defaultTerms = [projectName, clientName].filter(Boolean).join(', ')
+
   const [status, setStatus] = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
-  const [searchTerms, setSearchTerms] = useState('')
+  const [searchTerms, setSearchTerms] = useState(defaultTerms)
   const [result, setResult] = useState<DiscoveryResult | null>(null)
   const [selection, setSelection] = useState<SelectionMap>(new Map())
   const [saving, setSaving] = useState(false)
@@ -51,7 +53,7 @@ export function FindResourcesDialog({
     setResult(null)
     setSelection(new Map())
     setSaveError(null)
-    setSearchTerms('')
+    setSearchTerms(defaultTerms)
     onClose()
   }
 
@@ -140,7 +142,7 @@ export function FindResourcesDialog({
               value={searchTerms}
               onChange={e => setSearchTerms(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && runSearch()}
-              placeholder={`${projectName}, ${clientName} (add extra keywords separated by commas)`}
+              placeholder="Add extra keywords separated by commas…"
               className="w-full text-sm border border-neutral-200 dark:border-neutral-700 rounded-[4px] px-3 py-2 focus:outline-none focus:ring-1 focus:ring-neutral-900 dark:focus:ring-neutral-400 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 dark:placeholder:text-neutral-500"
               disabled={status === 'loading'}
             />

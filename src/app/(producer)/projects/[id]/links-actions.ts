@@ -89,7 +89,7 @@ export async function discoverResources(
       ? searchSlack(projectName, clientName, process.env.SLACK_BOT_TOKEN, extraTerms)
       : Promise.reject(new Error('__UNCONFIGURED__')),
     process.env.NOTION_API_KEY
-      ? searchNotion(projectName, clientName, process.env.NOTION_API_KEY)
+      ? searchNotion(projectName, clientName, extraTerms, process.env.NOTION_API_KEY)
       : Promise.reject(new Error('__UNCONFIGURED__')),
     process.env.GOOGLE_SA_EMAIL && process.env.GOOGLE_SA_PRIVATE_KEY
       ? searchDrive(projectName, clientName, extraTerms, process.env.GOOGLE_SA_EMAIL, process.env.GOOGLE_SA_PRIVATE_KEY)
@@ -170,22 +170,41 @@ async function fetchAllSlackChannels(token: string): Promise<any[]> {
   return all
 }
 
-async function searchNotion(projectName: string, clientName: string, key: string): Promise<DiscoveryMatch[]> {
-  const query = clientName ? `${projectName} ${clientName}` : projectName
-  const res = await fetch('https://api.notion.com/v1/search', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${key}`,
-      'Notion-Version': '2022-06-28',
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ query, page_size: 5 }),
-  }).then(r => r.json())
+async function searchNotion(
+  projectName: string,
+  clientName: string,
+  extraTerms: string[],
+  key: string,
+): Promise<DiscoveryMatch[]> {
+  const notionQuery = async (query: string): Promise<any[]> => {
+    const res = await fetch('https://api.notion.com/v1/search', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${key}`,
+        'Notion-Version': '2022-06-28',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ query, page_size: 8 }),
+    }).then(r => r.json())
+    if (res.status === 401) throw new Error('Invalid Notion API key')
+    if (res.object === 'error') throw new Error(res.message ?? 'Notion API error')
+    return res.results ?? []
+  }
 
-  if (res.status === 401) throw new Error('Invalid Notion API key')
-  if (res.object === 'error') throw new Error(res.message ?? 'Notion API error')
+  // Search each term separately — Notion handles short focused queries better
+  // than one long concatenated string
+  const terms = [projectName, clientName, ...extraTerms].filter(Boolean)
+  const batches = await Promise.all(terms.slice(0, 3).map(notionQuery))
 
-  return ((res.results ?? []) as any[]).slice(0, 3).map(p => ({
+  const seen = new Set<string>()
+  const all: any[] = []
+  for (const batch of batches) {
+    for (const page of batch) {
+      if (!seen.has(page.id)) { seen.add(page.id); all.push(page) }
+    }
+  }
+
+  return all.slice(0, 6).map(p => ({
     id: `notion-${p.id}`,
     tool: 'notion' as const,
     label: notionTitle(p),
@@ -305,10 +324,15 @@ function buildTerms(projectName: string, clientName: string): string[] {
 }
 
 function notionTitle(page: any): string {
+  // Scan all properties for the one with type === 'title' (works for any property name)
   const props = page.properties ?? {}
-  for (const key of ['Name', 'name', 'title', 'Title']) {
-    const val = props[key]?.title?.[0]?.plain_text
-    if (val) return val
+  for (const key of Object.keys(props)) {
+    if (props[key]?.type === 'title') {
+      const val = props[key]?.title?.[0]?.plain_text
+      if (val) return val
+    }
   }
+  // Databases expose title at the top level
+  if (Array.isArray(page.title) && page.title[0]?.plain_text) return page.title[0].plain_text
   return page.object === 'database' ? 'Untitled database' : 'Untitled page'
 }
