@@ -204,7 +204,19 @@ async function searchNotion(
     }
   }
 
-  return all.slice(0, 6).map(p => ({
+  // Keep only pages whose title contains at least one search term — Notion's
+  // API searches full content, which returns pages that merely mention the
+  // project in body text. Title-only matching keeps results relevant.
+  const lowerTerms = terms.map(t => t.toLowerCase())
+  const titleMatches = all.filter(page => {
+    const title = notionTitle(page).toLowerCase()
+    return lowerTerms.some(t => title.includes(t))
+  })
+
+  // Fall back to all results if title filtering removes everything
+  const results = titleMatches.length > 0 ? titleMatches : all
+
+  return results.slice(0, 6).map(p => ({
     id: `notion-${p.id}`,
     tool: 'notion' as const,
     label: notionTitle(p),
