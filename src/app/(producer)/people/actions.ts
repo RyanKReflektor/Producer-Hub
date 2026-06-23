@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 
 export async function createPerson(formData: FormData) {
@@ -15,7 +16,14 @@ export async function createPerson(formData: FormData) {
   const internalRate = formData.get('internal_rate') as string
   const externalRate = formData.get('external_rate') as string
 
-  const { error } = await supabase.from('profiles').insert({
+  const admin = createAdminClient()
+
+  // Invite the user — creates auth record, sends them a link to set their password
+  const { data: authData, error: authError } = await admin.auth.admin.inviteUserByEmail(email)
+  if (authError) throw new Error(authError.message)
+
+  const { error: profileError } = await admin.from('profiles').insert({
+    id: authData.user.id,
     email,
     name,
     role,
@@ -25,7 +33,12 @@ export async function createPerson(formData: FormData) {
     active: true,
   })
 
-  if (error) throw new Error(error.message)
+  if (profileError) {
+    // Roll back the auth user so we don't leave orphaned auth records
+    await admin.auth.admin.deleteUser(authData.user.id)
+    throw new Error(profileError.message)
+  }
+
   revalidatePath('/people')
 }
 
