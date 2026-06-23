@@ -22,14 +22,20 @@ export default async function PeoplePage() {
     .order('name', { ascending: true })
 
   return (
-    <div className="p-8">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-xl font-semibold text-neutral-900">People</h1>
-          <p className="text-sm text-neutral-500 mt-1">{(people || []).length} team member{(people || []).length !== 1 ? 's' : ''}</p>
+    <>
+      <div className="bg-[#0F0F0F] px-8 py-12">
+        <div className="flex items-end justify-between gap-4">
+          <div>
+            <h1 className="text-6xl font-light text-white leading-none tracking-tight">People</h1>
+            <div className="mt-5 flex items-center gap-4">
+              <div className="w-8 h-px bg-neutral-700" />
+              <p className="text-sm text-neutral-500">{(people || []).length} team member{(people || []).length !== 1 ? 's' : ''}</p>
+            </div>
+          </div>
+          <PeopleActions dark />
         </div>
-        <PeopleActions />
       </div>
+    <div className="p-8">
 
       <div className="bg-white border border-neutral-200 rounded-[4px]">
         <Table>
@@ -86,5 +92,6 @@ export default async function PeoplePage() {
         </Table>
       </div>
     </div>
+    </>
   )
 }

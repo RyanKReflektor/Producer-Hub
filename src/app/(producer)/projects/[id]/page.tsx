@@ -258,25 +258,29 @@ export default async function ProjectDetailPage({
   const sowTotal = project.budget_type === 'dollars' ? Number(project.budget_value) : null
 
   return (
-    <div className="p-8">
-      {/* Header */}
-      <div className="flex items-start justify-between mb-6">
-        <div>
-          <div className="flex items-center gap-3 mb-1">
-            <h1 className="text-xl font-semibold text-neutral-900">{project.name}</h1>
-            <StatusBadge status={project.status} />
+    <>
+      {/* Hero header */}
+      <div className="bg-[#0F0F0F] px-8 py-12">
+        <div className="flex items-end justify-between gap-4">
+          <div>
+            <h1 className="text-6xl font-light text-white leading-none tracking-tight">{project.name}</h1>
+            <div className="mt-5 flex items-center gap-4">
+              <div className="w-8 h-px bg-neutral-700" />
+              <p className="text-sm text-neutral-500">
+                {project.client}
+                {project.start_date && (
+                  <> &middot; {format(new Date(project.start_date), 'MMM d, yyyy')}
+                  {project.end_date && ` – ${format(new Date(project.end_date), 'MMM d, yyyy')}`}</>
+                )}
+              </p>
+              <StatusBadge status={project.status} />
+            </div>
           </div>
-          <p className="text-sm text-neutral-500">{project.client}</p>
-          {project.start_date && (
-            <p className="text-xs text-neutral-400 mt-1">
-              {format(new Date(project.start_date), 'MMM d, yyyy')}
-              {project.end_date && ` – ${format(new Date(project.end_date), 'MMM d, yyyy')}`}
-            </p>
-          )}
+          <ProjectDetailActions project={project} />
         </div>
-        <ProjectDetailActions project={project} />
       </div>
 
+    <div className="p-8">
       {/* Tab navigation */}
       <ProjectTabNav activeTab={activeTab} />
 
@@ -424,5 +428,6 @@ export default async function ProjectDetailPage({
         />
       )}
     </div>
+    </>
   )
 }

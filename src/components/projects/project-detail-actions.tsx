@@ -17,7 +17,7 @@ export function ProjectDetailActions({ project }: ProjectDetailActionsProps) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="outline" size="sm">
+        <Button variant="outline" size="sm" className="border-neutral-700 text-neutral-300 hover:bg-neutral-800 hover:text-white bg-transparent shrink-0">
           <Edit size={14} />
           Edit Project
         </Button>

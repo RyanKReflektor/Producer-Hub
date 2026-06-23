@@ -2,11 +2,15 @@ import { BarChart2 } from 'lucide-react'
 
 export default function ResourcingPage() {
   return (
-    <div className="p-8">
-      <div className="mb-8">
-        <h1 className="text-xl font-semibold text-neutral-900">Resourcing</h1>
-        <p className="text-sm text-neutral-500 mt-1">Weekly capacity planning and resource allocation</p>
+    <>
+      <div className="bg-[#0F0F0F] px-8 py-12">
+        <h1 className="text-6xl font-light text-white leading-none tracking-tight">Resourcing</h1>
+        <div className="mt-5 flex items-center gap-4">
+          <div className="w-8 h-px bg-neutral-700" />
+          <p className="text-sm text-neutral-500">Weekly capacity planning and resource allocation</p>
+        </div>
       </div>
+    <div className="p-8">
 
       <div className="bg-white border border-neutral-200 rounded-[4px] p-12 text-center">
         <BarChart2 size={40} className="mx-auto text-neutral-300 mb-4" />
@@ -37,5 +41,6 @@ export default function ResourcingPage() {
         </div>
       </div>
     </div>
+    </>
   )
 }

@@ -10,9 +10,10 @@ import type { Profile } from '@/lib/types'
 
 interface PeopleActionsProps {
   person?: Profile
+  dark?: boolean
 }
 
-export function PeopleActions({ person }: PeopleActionsProps) {
+export function PeopleActions({ person, dark }: PeopleActionsProps) {
   const [open, setOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
 
@@ -28,7 +29,7 @@ export function PeopleActions({ person }: PeopleActionsProps) {
     return (
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogTrigger asChild>
-          <Button size="sm">
+          <Button size="sm" variant={dark ? 'outline' : 'default'} className={dark ? 'border-neutral-700 text-neutral-300 hover:bg-neutral-800 hover:text-white bg-transparent shrink-0' : ''}>
             <Plus size={15} />
             Add Person
           </Button>

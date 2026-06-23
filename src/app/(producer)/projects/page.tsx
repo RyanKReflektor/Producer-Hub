@@ -67,29 +67,35 @@ export default function ProjectsPage() {
   ]
 
   return (
-    <div className="p-8">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-xl font-semibold text-neutral-900">Projects</h1>
-          <p className="text-sm text-neutral-500 mt-1">{projects.length} project{projects.length !== 1 ? 's' : ''}</p>
+    <>
+      <div className="bg-[#0F0F0F] px-8 py-12">
+        <div className="flex items-end justify-between gap-4">
+          <div>
+            <h1 className="text-6xl font-light text-white leading-none tracking-tight">Projects</h1>
+            <div className="mt-5 flex items-center gap-4">
+              <div className="w-8 h-px bg-neutral-700" />
+              <p className="text-sm text-neutral-500">{projects.length} project{projects.length !== 1 ? 's' : ''}</p>
+            </div>
+          </div>
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <DialogTrigger asChild>
+              <Button size="sm" variant="outline" className="border-neutral-700 text-neutral-300 hover:bg-neutral-800 hover:text-white bg-transparent shrink-0">
+                <Plus size={15} />
+                New Project
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <ProjectForm
+                onSuccess={() => {
+                  setDialogOpen(false)
+                  fetchProjects()
+                }}
+              />
+            </DialogContent>
+          </Dialog>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button size="sm">
-              <Plus size={15} />
-              New Project
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <ProjectForm
-              onSuccess={() => {
-                setDialogOpen(false)
-                fetchProjects()
-              }}
-            />
-          </DialogContent>
-        </Dialog>
       </div>
+    <div className="p-8">
 
       {/* Filter tabs */}
       <div className="flex items-center gap-1 mb-4 bg-neutral-100 p-1 rounded-[4px] w-fit">
@@ -175,5 +181,6 @@ export default function ProjectsPage() {
         </Table>
       </div>
     </div>
+    </>
   )
 }

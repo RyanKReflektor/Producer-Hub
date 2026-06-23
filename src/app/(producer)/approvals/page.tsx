@@ -127,14 +127,18 @@ export default async function ApprovalsPage() {
   const recentGroups = Array.from(recentGroupMap.values())
 
   return (
-    <div className="p-8">
-      <div className="mb-8">
-        <h1 className="text-xl font-semibold text-neutral-900">Approvals</h1>
-        <p className="text-sm text-neutral-500 mt-1">Review and approve submitted timesheets</p>
-        {submittedError && (
-          <p className="text-xs text-red-500 mt-1 font-mono">Query error: {submittedError.message}</p>
-        )}
+    <>
+      <div className="bg-[#0F0F0F] px-8 py-12">
+        <h1 className="text-6xl font-light text-white leading-none tracking-tight">Approvals</h1>
+        <div className="mt-5 flex items-center gap-4">
+          <div className="w-8 h-px bg-neutral-700" />
+          <p className="text-sm text-neutral-500">Review and approve submitted timesheets</p>
+        </div>
       </div>
+    <div className="p-8">
+      {submittedError && (
+        <p className="text-xs text-red-500 mb-4 font-mono">Query error: {submittedError.message}</p>
+      )}
 
       {/* Pending */}
       <div className="bg-white border border-neutral-200 rounded-[4px] mb-6">
@@ -202,5 +206,6 @@ export default async function ApprovalsPage() {
         <RecentActivityAccordion groups={recentGroups} />
       </div>
     </div>
+    </>
   )
 }
