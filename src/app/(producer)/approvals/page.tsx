@@ -12,6 +12,8 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { ApproveActions } from '@/components/approvals/approve-actions'
+import { RecentActivityAccordion } from '@/components/approvals/recent-activity-accordion'
+import type { RecentGroup as AccordionRecentGroup } from '@/components/approvals/recent-activity-accordion'
 import { format } from 'date-fns'
 
 export default async function ApprovalsPage() {
@@ -27,10 +29,10 @@ export default async function ApprovalsPage() {
 
   const { data: recentEntries } = await supabase
     .from('time_entries')
-    .select('id, person_id, project_id, hours, week_number, year, status, updated_at')
+    .select('id, person_id, project_id, hours, week_number, year, status, updated_at, date')
     .in('status', ['approved', 'rejected'])
     .order('updated_at', { ascending: false })
-    .limit(20)
+    .limit(100)
 
   // Gather unique IDs for lookup
   const allEntries = [...(submittedEntries || []), ...(recentEntries || [])]
@@ -92,19 +94,8 @@ export default async function ApprovalsPage() {
 
   const groups = Array.from(groupMap.values())
 
-  // Group recent (approved/rejected) entries by person + week — same shape as pending
-  type RecentGroup = {
-    key: string
-    personName: string
-    week: number
-    year: number
-    totalHours: number
-    status: string
-    resolvedAt: string | null
-    projectBreakdown: { projectName: string; hours: number }[]
-  }
-
-  const recentGroupMap = new Map<string, RecentGroup>()
+  // Group recent (approved/rejected) entries by person + week
+  const recentGroupMap = new Map<string, AccordionRecentGroup>()
   for (const entry of (recentEntries || [])) {
     const key = `${entry.person_id}-${entry.year}-${entry.week_number}-${entry.status}`
     if (!recentGroupMap.has(key)) {
@@ -117,16 +108,19 @@ export default async function ApprovalsPage() {
         status: entry.status,
         resolvedAt: entry.updated_at ?? null,
         projectBreakdown: [],
+        entries: [],
       })
     }
     const g = recentGroupMap.get(key)!
     g.totalHours += Number(entry.hours)
+    g.entries.push({ id: entry.id, project_id: entry.project_id, date: entry.date, hours: Number(entry.hours) })
+    const projectId = entry.project_id
     const projectName = projectMap.get(entry.project_id)?.name ?? 'Unknown project'
-    const existing = g.projectBreakdown.find(p => p.projectName === projectName)
+    const existing = g.projectBreakdown.find(p => p.projectId === projectId)
     if (existing) {
       existing.hours += Number(entry.hours)
     } else {
-      g.projectBreakdown.push({ projectName, hours: Number(entry.hours) })
+      g.projectBreakdown.push({ projectId, projectName, hours: Number(entry.hours) })
     }
   }
 
@@ -205,56 +199,7 @@ export default async function ApprovalsPage() {
         <div className="px-4 py-3 border-b border-neutral-100">
           <h2 className="text-sm font-semibold text-neutral-900">Recent Activity</h2>
         </div>
-        {recentGroups.length === 0 ? (
-          <div className="px-4 py-8 text-center text-neutral-500 text-sm">
-            No recent approval activity.
-          </div>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Person</TableHead>
-                <TableHead>Week</TableHead>
-                <TableHead>Projects</TableHead>
-                <TableHead className="text-right">Hours</TableHead>
-                <TableHead>Resolved</TableHead>
-                <TableHead>Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {recentGroups.map(group => (
-                <TableRow key={group.key}>
-                  <TableCell className="font-medium text-neutral-900">{group.personName}</TableCell>
-                  <TableCell className="font-mono text-neutral-600 text-sm">
-                    W{group.week} {group.year}
-                  </TableCell>
-                  <TableCell>
-                    <div className="space-y-0.5">
-                      {group.projectBreakdown.map(p => (
-                        <div key={p.projectName} className="text-xs text-neutral-500">
-                          {p.projectName} — <span className="font-mono">{formatHours(p.hours)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-right font-mono font-medium text-neutral-900">
-                    {formatHours(group.totalHours)}
-                  </TableCell>
-                  <TableCell className="text-neutral-500 text-xs">
-                    {group.resolvedAt
-                      ? format(new Date(group.resolvedAt), 'MMM d, yyyy')
-                      : '—'}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={group.status as 'approved' | 'rejected'}>
-                      {group.status === 'approved' ? 'Approved' : 'Rejected'}
-                    </Badge>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
+        <RecentActivityAccordion groups={recentGroups} />
       </div>
     </div>
   )
