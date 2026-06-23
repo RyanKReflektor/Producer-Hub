@@ -203,32 +203,56 @@ async function searchDrive(
   const token = await getDriveAccessToken(saEmail, saPrivateKey)
   const escape = (s: string) => s.replace(/'/g, "\\'")
 
-  // All terms: project, client, plus anything the user typed
   const allTerms = [projectName, clientName, ...extraTerms].filter(Boolean)
   const nameClauses = allTerms.map(t => `name contains '${escape(t)}'`).join(' or ')
 
-  const url = new URL('https://www.googleapis.com/drive/v3/files')
-  url.searchParams.set('q', `(${nameClauses}) and trashed = false`)
-  url.searchParams.set('pageSize', '20')
-  url.searchParams.set('fields', 'files(id,name,webViewLink,mimeType)')
-  // Include Shared Drives / Team Drives
-  url.searchParams.set('includeItemsFromAllDrives', 'true')
-  url.searchParams.set('supportsAllDrives', 'true')
-  url.searchParams.set('corpora', 'allDrives')
+  const commonParams: Record<string, string> = {
+    fields: 'files(id,name,webViewLink,mimeType)',
+    includeItemsFromAllDrives: 'true',
+    supportsAllDrives: 'true',
+    corpora: 'allDrives',
+  }
 
-  const res = await fetch(url.toString(), {
-    headers: { Authorization: `Bearer ${token}` },
-  }).then(r => r.json())
+  const listFiles = async (q: string, pageSize = 20): Promise<any[]> => {
+    const url = new URL('https://www.googleapis.com/drive/v3/files')
+    url.searchParams.set('q', q)
+    url.searchParams.set('pageSize', String(pageSize))
+    for (const [k, v] of Object.entries(commonParams)) url.searchParams.set(k, v)
+    const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json())
+    if (res.error) throw new Error(res.error.message ?? 'Drive API error')
+    return res.files ?? []
+  }
 
-  if (res.error) throw new Error(res.error.message ?? 'Drive API error')
+  // Step 1: find files and folders whose name matches the search terms
+  const initial: any[] = await listFiles(`(${nameClauses}) and trashed = false`)
 
-  return ((res.files ?? []) as any[]).slice(0, 8).map(f => ({
+  // Step 2: for any matched folders, list their direct children
+  const matchedFolders = initial.filter(f => f.mimeType === 'application/vnd.google-apps.folder')
+  const childBatches = await Promise.all(
+    matchedFolders.slice(0, 4).map(folder =>
+      listFiles(`'${folder.id}' in parents and trashed = false`)
+    )
+  )
+
+  // Merge: direct file matches first, then folder children, deduped by id
+  const seen = new Set<string>()
+  const merged: any[] = []
+  for (const f of [...initial, ...childBatches.flat()]) {
+    if (!seen.has(f.id)) { seen.add(f.id); merged.push(f) }
+  }
+
+  // Files before folders so actionable items surface first
+  const files = merged.filter(f => f.mimeType !== 'application/vnd.google-apps.folder')
+  const folders = merged.filter(f => f.mimeType === 'application/vnd.google-apps.folder')
+
+  return [...files, ...folders].slice(0, 10).map(f => ({
     id: `drive-${f.id}`,
     tool: 'drive' as const,
     label: f.name,
     url: f.webViewLink,
   }))
 }
+
 
 async function getDriveAccessToken(saEmail: string, saPrivateKey: string): Promise<string> {
   // Unescape \n from env var storage
