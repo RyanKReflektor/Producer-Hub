@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { formatCurrency } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -12,7 +12,7 @@ import {
 import { PeopleActions } from '@/components/people/people-actions'
 
 export default async function PeoplePage() {
-  const supabase = createClient()
+  const supabase = createAdminClient()
 
   const { data: people } = await supabase
     .from('profiles')

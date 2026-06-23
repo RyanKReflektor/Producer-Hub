@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { notFound } from 'next/navigation'
 import { formatCurrency, formatHours } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
@@ -32,7 +32,7 @@ function StatusBadge({ status }: { status: ProjectStatus }) {
 }
 
 export default async function ProjectDetailPage({ params }: { params: { id: string } }) {
-  const supabase = createClient()
+  const supabase = createAdminClient()
 
   const { data: project } = await supabase
     .from('projects')

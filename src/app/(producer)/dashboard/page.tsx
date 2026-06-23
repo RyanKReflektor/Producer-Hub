@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { formatCurrency, formatHours, getISOWeek } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -27,7 +27,7 @@ function StatusBadge({ status }: { status: ProjectStatus }) {
 }
 
 export default async function DashboardPage() {
-  const supabase = createClient()
+  const supabase = createAdminClient()
   const now = new Date()
   const { week, year } = getISOWeek(now)
 

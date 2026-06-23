@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { formatHours } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -13,17 +13,20 @@ import { ApproveActions } from '@/components/approvals/approve-actions'
 import { format } from 'date-fns'
 
 export default async function ApprovalsPage() {
-  const supabase = createClient()
+  // Use admin client for all reads on this page. The middleware already
+  // verified the session is a producer; we use admin so PostgREST join
+  // RLS issues don't silently swallow rows.
+  const supabase = createAdminClient()
 
   const { data: submittedEntries } = await supabase
     .from('time_entries')
-    .select('*, profile:profiles(name), project:projects(name, client)')
+    .select('*, profile:profiles(id, name), project:projects(id, name, client)')
     .eq('status', 'submitted')
     .order('submitted_at', { ascending: false })
 
   const { data: recentEntries } = await supabase
     .from('time_entries')
-    .select('*, profile:profiles(name), project:projects(name, client)')
+    .select('*, profile:profiles(id, name), project:projects(id, name, client)')
     .in('status', ['approved', 'rejected'])
     .order('updated_at', { ascending: false })
     .limit(20)
