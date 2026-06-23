@@ -1,6 +1,8 @@
 export const dynamic = 'force-dynamic'
 
+import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { redirect } from 'next/navigation'
 import { formatCurrency, formatHours, getISOWeek } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -29,6 +31,16 @@ function StatusBadge({ status }: { status: ProjectStatus }) {
 }
 
 export default async function DashboardPage() {
+  const supabaseUser = createClient()
+  const { data: { user } } = await supabaseUser.auth.getUser()
+  if (!user) redirect('/login')
+
+  const { data: profile } = await supabaseUser
+    .from('profiles')
+    .select('name')
+    .eq('id', user.id)
+    .single()
+
   const supabase = createAdminClient()
   const now = new Date()
   const { week, year } = getISOWeek(now)
@@ -122,7 +134,7 @@ export default async function DashboardPage() {
     <div className="p-8">
       {/* Header */}
       <div className="mb-8">
-        <h1 className="text-xl font-semibold text-neutral-900">Dashboard</h1>
+        <h1 className="text-2xl font-semibold text-neutral-900">Welcome, {profile?.name ?? 'there'}</h1>
         <p className="text-sm text-neutral-500 mt-1">Week {week}, {year}</p>
       </div>
 

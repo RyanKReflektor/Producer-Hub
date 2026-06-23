@@ -23,6 +23,12 @@ export default async function ContributorDashboard() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('name')
+    .eq('id', user.id)
+    .single()
+
   const now = new Date()
   const { week, year } = getISOWeek(now)
 
@@ -58,7 +64,7 @@ export default async function ContributorDashboard() {
 
   return (
     <div className="p-8 max-w-3xl">
-      <h1 className="text-xl font-semibold text-neutral-900 dark:text-white mb-1">Dashboard</h1>
+      <h1 className="text-2xl font-semibold text-neutral-900 dark:text-white mb-1">Welcome, {profile?.name ?? 'there'}</h1>
       <p className="text-sm text-neutral-500 dark:text-neutral-400 mb-8">Week {week}, {year}</p>
 
       {/* Hours this week */}
