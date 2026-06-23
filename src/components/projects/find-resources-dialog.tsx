@@ -23,6 +23,7 @@ interface FindResourcesDialogProps {
   projectId: string
   projectName: string
   clientName: string
+  existingLinks: ProjectLink[]
   onLinksAdded: (links: ProjectLink[]) => void
 }
 
@@ -34,6 +35,7 @@ export function FindResourcesDialog({
   projectId,
   projectName,
   clientName,
+  existingLinks,
   onLinksAdded,
 }: FindResourcesDialogProps) {
   const { theme } = useTheme()
@@ -65,11 +67,14 @@ export function FindResourcesDialog({
 
     const extra = searchTerms.split(',').map(t => t.trim()).filter(Boolean)
 
+    const existingUrls = new Set(existingLinks.map(l => l.url))
+
     discoverResources(projectName, clientName, extra)
       .then(r => {
-        setResult(r)
+        const filtered = { ...r, matches: r.matches.filter(m => !existingUrls.has(m.url)) }
+        setResult(filtered)
         const map: SelectionMap = new Map()
-        r.matches.forEach(m => map.set(m.id, { match: m, label: m.label, selected: true }))
+        filtered.matches.forEach(m => map.set(m.id, { match: m, label: m.label, selected: true }))
         setSelection(map)
         setStatus('done')
       })

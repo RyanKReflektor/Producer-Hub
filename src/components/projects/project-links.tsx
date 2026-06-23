@@ -241,6 +241,7 @@ export function ProjectLinks({
         projectId={projectId}
         projectName={projectName}
         clientName={clientName}
+        existingLinks={links}
         onLinksAdded={added => setLinks(prev => [...prev, ...added])}
       />
     </div>

@@ -133,7 +133,7 @@ async function searchSlack(
 
   return channels
     .filter(c => terms.some(t => (c.name as string).toLowerCase().includes(t)))
-    .slice(0, 5)
+    .slice(0, 10)
     .map(c => ({
       id: `slack-${c.id}`,
       tool: 'slack' as const,
@@ -218,7 +218,7 @@ async function searchNotion(
   })
   const results = [...titleHits, ...contentOnly]
 
-  return results.slice(0, 6).map(p => ({
+  return results.slice(0, 10).map(p => ({
     id: `notion-${p.id}`,
     tool: 'notion' as const,
     label: notionTitle(p),
