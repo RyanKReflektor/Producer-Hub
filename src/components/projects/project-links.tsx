@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useTransition, Fragment } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -8,7 +8,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { Plus, Sparkles, Pencil, Trash2, ExternalLink, EyeOff } from 'lucide-react'
+import { Plus, Sparkles, Pencil, Trash2, ExternalLink, EyeOff, ChevronRight, ChevronDown } from 'lucide-react'
 import {
   addProjectLink,
   updateProjectLink,
@@ -42,6 +42,27 @@ export function ProjectLinks({
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
   const [formError, setFormError] = useState<string | null>(null)
+  const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set())
+
+  const toggleTool = (tool: string) => {
+    setExpandedTools(prev => {
+      const next = new Set(prev)
+      if (next.has(tool)) next.delete(tool)
+      else next.add(tool)
+      return next
+    })
+  }
+
+  // Group links by tool, preserving first-appearance order. Tools with more
+  // than 2 links collapse into an accordion; 1–2 links render flat.
+  const linkGroups = (() => {
+    const map = new Map<LinkTool, ProjectLink[]>()
+    for (const link of links) {
+      if (!map.has(link.tool)) map.set(link.tool, [])
+      map.get(link.tool)!.push(link)
+    }
+    return Array.from(map.entries()).map(([tool, items]) => ({ tool, items }))
+  })()
 
   // ── Add dialog ──────────────────────────────────────────────────────────────
 
@@ -107,6 +128,56 @@ export function ProjectLinks({
     })
   }
 
+  function renderLinkRow(link: ProjectLink, isChild = false) {
+    return (
+      <li
+        key={link.id}
+        className={`flex items-center gap-3 py-2.5 hover:bg-neutral-50/50 dark:hover:bg-white/[0.02] group ${
+          isChild ? 'pl-11 pr-4' : 'px-4'
+        }`}
+      >
+        {!isChild && <ToolIcon tool={link.tool} size={14} />}
+        <div className="flex-1 min-w-0">
+          <a
+            href={link.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-sm font-medium text-neutral-900 dark:text-[#f0f0f0] hover:underline flex items-center gap-1 min-w-0"
+          >
+            <span className="truncate">{link.label}</span>
+            <ExternalLink size={11} className="shrink-0 text-neutral-400" />
+            {link.producer_only && (
+              <span title="Hidden from contributors">
+                <EyeOff size={11} className="shrink-0 text-amber-500" />
+              </span>
+            )}
+          </a>
+          {!isChild && (
+            <p className="text-xs text-neutral-400 dark:text-[#555] truncate">{toolLabel(link.tool)}</p>
+          )}
+        </div>
+        {isProducer && (
+          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button
+              onClick={() => { setFormError(null); setEditTarget(link) }}
+              className="p-1 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300 rounded"
+              aria-label="Edit"
+            >
+              <Pencil size={13} />
+            </button>
+            <button
+              onClick={() => setDeleteId(link.id)}
+              className="p-1 text-neutral-400 hover:text-red-600 rounded"
+              aria-label="Delete"
+            >
+              <Trash2 size={13} />
+            </button>
+          </div>
+        )}
+      </li>
+    )
+  }
+
   return (
     <div className="bg-white border border-neutral-200 rounded-[4px] mb-6 dark:bg-[#1a1a1a] dark:border-[#2a2a2a]">
       {/* Header */}
@@ -147,49 +218,37 @@ export function ProjectLinks({
         </div>
       ) : (
         <ul className="divide-y divide-neutral-100 dark:divide-[#222]">
-          {links.map(link => (
-            <li
-              key={link.id}
-              className="flex items-center gap-3 px-4 py-2.5 hover:bg-neutral-50/50 dark:hover:bg-white/[0.02] group"
-            >
-              <ToolIcon tool={link.tool} size={14} />
-              <div className="flex-1 min-w-0">
-                <a
-                  href={link.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-sm font-medium text-neutral-900 dark:text-[#f0f0f0] hover:underline flex items-center gap-1 min-w-0"
-                >
-                  <span className="truncate">{link.label}</span>
-                  <ExternalLink size={11} className="shrink-0 text-neutral-400" />
-                  {link.producer_only && (
-                    <span title="Hidden from contributors">
-                      <EyeOff size={11} className="shrink-0 text-amber-500" />
+          {linkGroups.map(group => {
+            // 1–2 links of a type render flat
+            if (group.items.length <= 2) {
+              return group.items.map(link => renderLinkRow(link))
+            }
+            // More than 2 — collapse into an accordion keyed by tool
+            const isExpanded = expandedTools.has(group.tool)
+            return (
+              <Fragment key={group.tool}>
+                <li>
+                  <button
+                    type="button"
+                    onClick={() => toggleTool(group.tool)}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-neutral-50/50 dark:hover:bg-white/[0.02] text-left"
+                  >
+                    {isExpanded
+                      ? <ChevronDown size={14} className="shrink-0 text-neutral-400" />
+                      : <ChevronRight size={14} className="shrink-0 text-neutral-400" />}
+                    <ToolIcon tool={group.tool} size={14} />
+                    <span className="text-sm font-medium text-neutral-900 dark:text-[#f0f0f0]">
+                      {toolLabel(group.tool)}
                     </span>
-                  )}
-                </a>
-                <p className="text-xs text-neutral-400 dark:text-[#555] truncate">{toolLabel(link.tool)}</p>
-              </div>
-              {isProducer && (
-                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button
-                    onClick={() => { setFormError(null); setEditTarget(link) }}
-                    className="p-1 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300 rounded"
-                    aria-label="Edit"
-                  >
-                    <Pencil size={13} />
+                    <span className="text-xs text-neutral-400 dark:text-[#555]">
+                      {group.items.length}
+                    </span>
                   </button>
-                  <button
-                    onClick={() => setDeleteId(link.id)}
-                    className="p-1 text-neutral-400 hover:text-red-600 rounded"
-                    aria-label="Delete"
-                  >
-                    <Trash2 size={13} />
-                  </button>
-                </div>
-              )}
-            </li>
-          ))}
+                </li>
+                {isExpanded && group.items.map(link => renderLinkRow(link, true))}
+              </Fragment>
+            )
+          })}
         </ul>
       )}
 

@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { Plus, Pencil, Trash2, Download } from 'lucide-react'
+import { useState, Fragment } from 'react'
+import { Plus, Pencil, Trash2, Download, ChevronRight, ChevronDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -89,6 +89,26 @@ export function FinancialsTab({
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [expandedLabels, setExpandedLabels] = useState<Set<string>>(new Set())
+
+  const toggleLabel = (label: string) => {
+    setExpandedLabels(prev => {
+      const next = new Set(prev)
+      if (next.has(label)) next.delete(label)
+      else next.add(label)
+      return next
+    })
+  }
+
+  // Group expenses by label, preserving first-appearance order
+  const expenseGroups = (() => {
+    const map = new Map<string, Expense[]>()
+    for (const ex of expenses) {
+      if (!map.has(ex.label)) map.set(ex.label, [])
+      map.get(ex.label)!.push(ex)
+    }
+    return Array.from(map.entries()).map(([label, items]) => ({ label, items }))
+  })()
 
   // ── Derived calculations ─────────────────────────────────────────────────────
 
@@ -229,6 +249,45 @@ export function FinancialsTab({
     a.download = `financials-${projectId}.csv`
     a.click()
     URL.revokeObjectURL(url)
+  }
+
+  // ── Expense row renderer (shared by flat + accordion children) ────────────────
+
+  function renderExpenseRow(expense: Expense, isChild = false) {
+    return (
+      <TableRow key={expense.id} className={isChild ? 'bg-neutral-50/40' : ''}>
+        <TableCell className="text-neutral-600 text-xs">{EXPENSE_TYPE_LABELS[expense.expense_type]}</TableCell>
+        <TableCell className={`font-medium text-neutral-900 ${isChild ? 'pl-8' : ''}`}>{expense.label}</TableCell>
+        <TableCell className="text-right font-mono text-neutral-700">
+          {formatCurrency(Number(expense.amount), currency)}
+        </TableCell>
+        <TableCell className="text-right font-mono text-neutral-600">{Number(expense.quantity)}</TableCell>
+        <TableCell className="text-right font-mono font-medium text-neutral-900">
+          {formatCurrency(Number(expense.amount) * Number(expense.quantity), currency)}
+        </TableCell>
+        <TableCell className="text-xs text-neutral-400 max-w-[160px] truncate">
+          {expense.notes ?? '—'}
+        </TableCell>
+        <TableCell>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => { setFormError(null); setEditTarget(expense) }}
+              className="p-1 text-neutral-400 hover:text-neutral-700 rounded transition-colors"
+              aria-label="Edit"
+            >
+              <Pencil size={13} />
+            </button>
+            <button
+              onClick={() => setDeleteId(expense.id)}
+              className="p-1 text-neutral-400 hover:text-red-600 rounded transition-colors"
+              aria-label="Delete"
+            >
+              <Trash2 size={13} />
+            </button>
+          </div>
+        </TableCell>
+      </TableRow>
+    )
   }
 
   // ── Render ───────────────────────────────────────────────────────────────────
@@ -376,40 +435,45 @@ export function FinancialsTab({
                 </TableCell>
               </TableRow>
             ) : (
-              expenses.map(expense => (
-                <TableRow key={expense.id}>
-                  <TableCell className="text-neutral-600 text-xs">{EXPENSE_TYPE_LABELS[expense.expense_type]}</TableCell>
-                  <TableCell className="font-medium text-neutral-900">{expense.label}</TableCell>
-                  <TableCell className="text-right font-mono text-neutral-700">
-                    {formatCurrency(Number(expense.amount), currency)}
-                  </TableCell>
-                  <TableCell className="text-right font-mono text-neutral-600">{Number(expense.quantity)}</TableCell>
-                  <TableCell className="text-right font-mono font-medium text-neutral-900">
-                    {formatCurrency(Number(expense.amount) * Number(expense.quantity), currency)}
-                  </TableCell>
-                  <TableCell className="text-xs text-neutral-400 max-w-[160px] truncate">
-                    {expense.notes ?? '—'}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => { setFormError(null); setEditTarget(expense) }}
-                        className="p-1 text-neutral-400 hover:text-neutral-700 rounded transition-colors"
-                        aria-label="Edit"
-                      >
-                        <Pencil size={13} />
-                      </button>
-                      <button
-                        onClick={() => setDeleteId(expense.id)}
-                        className="p-1 text-neutral-400 hover:text-red-600 rounded transition-colors"
-                        aria-label="Delete"
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))
+              expenseGroups.map(group => {
+                // Single entry — render a normal row
+                if (group.items.length === 1) {
+                  return renderExpenseRow(group.items[0])
+                }
+                // Multiple entries with same label — accordion
+                const isExpanded = expandedLabels.has(group.label)
+                const groupTotal = group.items.reduce((s, e) => s + Number(e.amount) * Number(e.quantity), 0)
+                const allSameCategory = group.items.every(e => e.expense_type === group.items[0].expense_type)
+                return (
+                  <Fragment key={group.label}>
+                    <TableRow
+                      className="cursor-pointer hover:bg-neutral-50"
+                      onClick={() => toggleLabel(group.label)}
+                    >
+                      <TableCell className="text-neutral-600 text-xs">
+                        <div className="flex items-center gap-1">
+                          {isExpanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                          {allSameCategory ? EXPENSE_TYPE_LABELS[group.items[0].expense_type] : 'Multiple'}
+                        </div>
+                      </TableCell>
+                      <TableCell className="font-medium text-neutral-900">
+                        {group.label}
+                        <span className="text-neutral-400 font-normal ml-1.5">({group.items.length})</span>
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-neutral-400">—</TableCell>
+                      <TableCell className="text-right font-mono text-neutral-400">—</TableCell>
+                      <TableCell className="text-right font-mono font-medium text-neutral-900">
+                        {formatCurrency(groupTotal, currency)}
+                      </TableCell>
+                      <TableCell className="text-xs text-neutral-400">
+                        {isExpanded ? '' : `${group.items.length} entries`}
+                      </TableCell>
+                      <TableCell />
+                    </TableRow>
+                    {isExpanded && group.items.map(item => renderExpenseRow(item, true))}
+                  </Fragment>
+                )
+              })
             )}
             {expenses.length > 0 && (
               <TableRow className="bg-neutral-50 font-semibold">
