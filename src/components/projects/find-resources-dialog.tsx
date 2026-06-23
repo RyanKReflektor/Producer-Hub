@@ -14,6 +14,8 @@ import { discoverResources, addProjectLink } from '@/app/(producer)/projects/[id
 import type { DiscoveryMatch, DiscoveryResult } from '@/app/(producer)/projects/[id]/links-actions'
 import type { ProjectLink } from '@/lib/types'
 import { ToolIcon, toolLabel } from './tool-icons'
+import { useTheme } from '@/components/layout/theme-context'
+import { cn } from '@/lib/utils'
 
 interface FindResourcesDialogProps {
   open: boolean
@@ -34,6 +36,9 @@ export function FindResourcesDialog({
   clientName,
   onLinksAdded,
 }: FindResourcesDialogProps) {
+  const { theme } = useTheme()
+  const dark = theme === 'dark'
+
   const [status, setStatus] = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
   const [searchTerms, setSearchTerms] = useState('')
   const [result, setResult] = useState<DiscoveryResult | null>(null)
@@ -118,11 +123,13 @@ export function FindResourcesDialog({
       })).filter(g => g.items.length > 0)
     : []
 
+  const hasResults = status !== 'loading' && status !== 'idle' && result
+
   return (
     <Dialog open={open} onOpenChange={v => { if (!v) handleClose() }}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className={cn('max-w-lg max-h-[85vh]', dark && 'dark')}>
         <DialogHeader>
-          <DialogTitle>Find Resources</DialogTitle>
+          <DialogTitle className="dark:text-white">Find Resources</DialogTitle>
         </DialogHeader>
 
         {/* Search input */}
@@ -134,7 +141,7 @@ export function FindResourcesDialog({
               onChange={e => setSearchTerms(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && runSearch()}
               placeholder={`${projectName}, ${clientName} (add extra keywords separated by commas)`}
-              className="w-full text-sm border border-neutral-200 rounded-[4px] px-3 py-2 focus:outline-none focus:ring-1 focus:ring-neutral-900"
+              className="w-full text-sm border border-neutral-200 dark:border-neutral-700 rounded-[4px] px-3 py-2 focus:outline-none focus:ring-1 focus:ring-neutral-900 dark:focus:ring-neutral-400 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 dark:placeholder:text-neutral-500"
               disabled={status === 'loading'}
             />
           </div>
@@ -147,7 +154,7 @@ export function FindResourcesDialog({
         {status === 'loading' && (
           <div className="flex flex-col items-center justify-center py-8 gap-3">
             <Loader2 size={24} className="animate-spin text-neutral-400" />
-            <p className="text-sm text-neutral-500">Searching Slack, Notion, and Drive…</p>
+            <p className="text-sm text-neutral-500 dark:text-neutral-400">Searching Slack, Notion, and Drive…</p>
           </div>
         )}
 
@@ -157,97 +164,99 @@ export function FindResourcesDialog({
           </div>
         )}
 
-        {status !== 'loading' && status !== 'idle' && result && (
-          <div className="space-y-4">
-            {/* Results */}
-            {grouped.length > 0 ? (
-              <div className="space-y-3">
-                {grouped.map(({ tool, items }) => (
-                  <div key={tool}>
-                    <div className="flex items-center gap-1.5 mb-1.5">
-                      <ToolIcon tool={tool} size={13} />
-                      <span className="text-xs font-semibold text-neutral-500 uppercase tracking-wider">
-                        {toolLabel(tool)}
-                      </span>
-                    </div>
-                    <div className="space-y-1.5">
-                      {items.map(match => {
-                        const sel = selection.get(match.id)
-                        const isSelected = sel?.selected ?? false
-                        return (
-                          <label
-                            key={match.id}
-                            className={`flex items-start gap-3 p-2.5 rounded-[4px] border cursor-pointer transition-colors ${
-                              isSelected
-                                ? 'border-neutral-300 bg-white'
-                                : 'border-neutral-100 bg-neutral-50 opacity-60'
-                            }`}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={isSelected}
-                              onChange={() => toggle(match.id)}
-                              className="mt-0.5 accent-neutral-900"
-                            />
-                            <div className="flex-1 min-w-0">
+        {hasResults && (
+          <>
+            {/* Scrollable results area */}
+            <div className="overflow-y-auto min-h-0 space-y-4 flex-1 pr-1">
+              {grouped.length > 0 ? (
+                <div className="space-y-3">
+                  {grouped.map(({ tool, items }) => (
+                    <div key={tool}>
+                      <div className="flex items-center gap-1.5 mb-1.5">
+                        <ToolIcon tool={tool} size={13} />
+                        <span className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">
+                          {toolLabel(tool)}
+                        </span>
+                      </div>
+                      <div className="space-y-1.5">
+                        {items.map(match => {
+                          const sel = selection.get(match.id)
+                          const isSelected = sel?.selected ?? false
+                          return (
+                            <label
+                              key={match.id}
+                              className={cn(
+                                'flex items-start gap-3 p-2.5 rounded-[4px] border cursor-pointer transition-colors',
+                                isSelected
+                                  ? 'border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800'
+                                  : 'border-neutral-100 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800/40 opacity-60'
+                              )}
+                            >
                               <input
-                                type="text"
-                                value={sel?.label ?? match.label}
-                                onChange={e => setLabel(match.id, e.target.value)}
-                                onClick={e => e.stopPropagation()}
-                                className="w-full text-sm font-medium text-neutral-900 bg-transparent border-none outline-none focus:underline"
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => toggle(match.id)}
+                                className="mt-0.5 accent-neutral-900 dark:accent-neutral-100"
                               />
-                              <p className="text-xs text-neutral-400 truncate mt-0.5">{match.url}</p>
-                            </div>
-                          </label>
-                        )
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : result.unconfigured.length < 3 ? (
-              <div className="py-8 text-center">
-                <p className="text-sm text-neutral-500">No matching resources found.</p>
-                <p className="text-xs text-neutral-400 mt-1">Try adding links manually instead.</p>
-              </div>
-            ) : null}
-
-            {/* Errors */}
-            {result.errors.length > 0 && (
-              <div className="space-y-1.5">
-                {result.errors.map(e => (
-                  <div key={e.service} className="flex items-center gap-2 text-xs text-red-600 bg-red-50 border border-red-100 rounded-[4px] px-3 py-2">
-                    <AlertCircle size={12} />
-                    <span><strong>{e.service}:</strong> {e.message}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Not configured */}
-            {result.unconfigured.length > 0 && (
-              <div className="border border-neutral-100 rounded-[4px] p-3 bg-neutral-50">
-                <p className="text-xs font-medium text-neutral-500 mb-2">Not configured</p>
-                <div className="space-y-1">
-                  {result.unconfigured.map(svc => (
-                    <div key={svc} className="flex items-center justify-between">
-                      <span className="text-xs text-neutral-500">{svc}</span>
-                      <Badge variant="draft" className="text-[10px] py-0 font-mono">
-                        {svc === 'Slack' ? 'SLACK_BOT_TOKEN' : svc === 'Notion' ? 'NOTION_API_KEY' : 'GOOGLE_SA_EMAIL + KEY'}
-                      </Badge>
+                              <div className="flex-1 min-w-0">
+                                <input
+                                  type="text"
+                                  value={sel?.label ?? match.label}
+                                  onChange={e => setLabel(match.id, e.target.value)}
+                                  onClick={e => e.stopPropagation()}
+                                  className="w-full text-sm font-medium text-neutral-900 dark:text-neutral-100 bg-transparent border-none outline-none focus:underline"
+                                />
+                                <p className="text-xs text-neutral-400 dark:text-neutral-500 truncate mt-0.5">{match.url}</p>
+                              </div>
+                            </label>
+                          )
+                        })}
+                      </div>
                     </div>
                   ))}
                 </div>
-                <p className="text-[10px] text-neutral-400 mt-2">Add these to .env.local to enable discovery.</p>
-              </div>
-            )}
+              ) : result!.unconfigured.length < 3 ? (
+                <div className="py-8 text-center">
+                  <p className="text-sm text-neutral-500 dark:text-neutral-400">No matching resources found.</p>
+                  <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-1">Try adding links manually instead.</p>
+                </div>
+              ) : null}
 
-            {saveError && (
-              <p className="text-xs text-red-600">{saveError}</p>
-            )}
+              {result!.errors.length > 0 && (
+                <div className="space-y-1.5">
+                  {result!.errors.map(e => (
+                    <div key={e.service} className="flex items-center gap-2 text-xs text-red-600 bg-red-50 dark:bg-red-950/40 border border-red-100 dark:border-red-900/50 rounded-[4px] px-3 py-2">
+                      <AlertCircle size={12} />
+                      <span><strong>{e.service}:</strong> {e.message}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
 
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-neutral-100">
+              {result!.unconfigured.length > 0 && (
+                <div className="border border-neutral-100 dark:border-neutral-700 rounded-[4px] p-3 bg-neutral-50 dark:bg-neutral-800">
+                  <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400 mb-2">Not configured</p>
+                  <div className="space-y-1">
+                    {result!.unconfigured.map(svc => (
+                      <div key={svc} className="flex items-center justify-between">
+                        <span className="text-xs text-neutral-500 dark:text-neutral-400">{svc}</span>
+                        <Badge variant="draft" className="text-[10px] py-0 font-mono">
+                          {svc === 'Slack' ? 'SLACK_BOT_TOKEN' : svc === 'Notion' ? 'NOTION_API_KEY' : 'GOOGLE_SA_EMAIL + KEY'}
+                        </Badge>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-[10px] text-neutral-400 dark:text-neutral-500 mt-2">Add these to .env.local to enable discovery.</p>
+                </div>
+              )}
+
+              {saveError && (
+                <p className="text-xs text-red-600">{saveError}</p>
+              )}
+            </div>
+
+            {/* Action buttons — pinned outside scroll area */}
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-neutral-100 dark:border-neutral-700 shrink-0">
               <Button variant="outline" size="sm" onClick={handleClose} disabled={saving}>
                 Cancel
               </Button>
@@ -263,7 +272,7 @@ export function FindResourcesDialog({
                   : 'No items selected'}
               </Button>
             </div>
-          </div>
+          </>
         )}
       </DialogContent>
     </Dialog>
