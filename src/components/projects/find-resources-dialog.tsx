@@ -198,7 +198,7 @@ export function FindResourcesDialog({
                     <div key={svc} className="flex items-center justify-between">
                       <span className="text-xs text-neutral-500">{svc}</span>
                       <Badge variant="draft" className="text-[10px] py-0 font-mono">
-                        {svc === 'Slack' ? 'SLACK_BOT_TOKEN' : svc === 'Notion' ? 'NOTION_API_KEY' : 'GOOGLE_DRIVE_ACCESS_TOKEN'}
+                        {svc === 'Slack' ? 'SLACK_BOT_TOKEN' : svc === 'Notion' ? 'NOTION_API_KEY' : 'GOOGLE_SA_EMAIL + KEY'}
                       </Badge>
                     </div>
                   ))}

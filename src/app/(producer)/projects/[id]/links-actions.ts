@@ -90,8 +90,8 @@ export async function discoverResources(
     process.env.NOTION_API_KEY
       ? searchNotion(projectName, process.env.NOTION_API_KEY)
       : Promise.reject(new Error('__UNCONFIGURED__')),
-    process.env.GOOGLE_DRIVE_ACCESS_TOKEN
-      ? searchDrive(projectName, process.env.GOOGLE_DRIVE_ACCESS_TOKEN)
+    process.env.GOOGLE_SA_EMAIL && process.env.GOOGLE_SA_PRIVATE_KEY
+      ? searchDrive(projectName, process.env.GOOGLE_SA_EMAIL, process.env.GOOGLE_SA_PRIVATE_KEY)
       : Promise.reject(new Error('__UNCONFIGURED__')),
   ])
 
@@ -169,7 +169,12 @@ async function searchNotion(projectName: string, key: string): Promise<Discovery
   }))
 }
 
-async function searchDrive(projectName: string, token: string): Promise<DiscoveryMatch[]> {
+async function searchDrive(
+  projectName: string,
+  saEmail: string,
+  saPrivateKey: string,
+): Promise<DiscoveryMatch[]> {
+  const token = await getDriveAccessToken(saEmail, saPrivateKey)
   const escaped = projectName.replace(/'/g, "\\'")
   const q = encodeURIComponent(`fullText contains '${escaped}' and trashed = false`)
   const res = await fetch(
@@ -185,6 +190,40 @@ async function searchDrive(projectName: string, token: string): Promise<Discover
     label: f.name,
     url: f.webViewLink,
   }))
+}
+
+async function getDriveAccessToken(saEmail: string, saPrivateKey: string): Promise<string> {
+  // Unescape \n from env var storage
+  const privateKey = saPrivateKey.replace(/\\n/g, '\n')
+  const now = Math.floor(Date.now() / 1000)
+
+  const header = Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT' })).toString('base64url')
+  const payload = Buffer.from(JSON.stringify({
+    iss: saEmail,
+    scope: 'https://www.googleapis.com/auth/drive.readonly',
+    aud: 'https://oauth2.googleapis.com/token',
+    iat: now,
+    exp: now + 3600,
+  })).toString('base64url')
+
+  const { createSign } = await import('crypto')
+  const sign = createSign('RSA-SHA256')
+  sign.update(`${header}.${payload}`)
+  const signature = sign.sign(privateKey, 'base64url')
+
+  const jwt = `${header}.${payload}.${signature}`
+
+  const res = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+      assertion: jwt,
+    }),
+  }).then(r => r.json())
+
+  if (!res.access_token) throw new Error(res.error_description ?? 'Failed to get Drive token')
+  return res.access_token
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
