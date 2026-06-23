@@ -24,15 +24,17 @@ import type { Project, ProjectStatus } from '@/lib/types'
 import { format } from 'date-fns'
 
 function StatusBadge({ status }: { status: ProjectStatus }) {
-  const variantMap: Record<ProjectStatus, 'active' | 'completed' | 'on_hold'> = {
+  const variantMap: Record<ProjectStatus, 'active' | 'completed' | 'on_hold' | 'pitch'> = {
     active: 'active',
     completed: 'completed',
     on_hold: 'on_hold',
+    pitch: 'pitch',
   }
   const labels: Record<ProjectStatus, string> = {
     active: 'Active',
     completed: 'Completed',
     on_hold: 'On Hold',
+    pitch: 'Pitch / Proposal',
   }
   return <Badge variant={variantMap[status]}>{labels[status]}</Badge>
 }
@@ -61,6 +63,7 @@ export default function ProjectsPage() {
 
   const filters: Array<{ value: ProjectStatus | 'all'; label: string }> = [
     { value: 'all', label: 'All' },
+    { value: 'pitch', label: 'Pitch / Proposal' },
     { value: 'active', label: 'Active' },
     { value: 'on_hold', label: 'On Hold' },
     { value: 'completed', label: 'Completed' },

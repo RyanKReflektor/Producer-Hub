@@ -86,6 +86,7 @@ export function ProjectForm({ project, onSuccess }: ProjectFormProps) {
                 <SelectValue placeholder="Select status" />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="pitch">Pitch / Proposal</SelectItem>
                 <SelectItem value="active">Active</SelectItem>
                 <SelectItem value="on_hold">On Hold</SelectItem>
                 <SelectItem value="completed">Completed</SelectItem>

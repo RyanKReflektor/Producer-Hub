@@ -1,6 +1,6 @@
 export type UserRole = 'producer' | 'contributor'
 export type PersonType = 'employee' | 'freelancer'
-export type ProjectStatus = 'active' | 'completed' | 'on_hold'
+export type ProjectStatus = 'active' | 'completed' | 'on_hold' | 'pitch'
 export type EntryStatus = 'draft' | 'submitted' | 'approved' | 'rejected'
 export type BudgetType = 'hours' | 'dollars'
 

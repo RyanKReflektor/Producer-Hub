@@ -17,15 +17,17 @@ import Link from 'next/link'
 import type { ProjectStatus } from '@/lib/types'
 
 function StatusBadge({ status }: { status: ProjectStatus }) {
-  const variantMap: Record<ProjectStatus, 'active' | 'completed' | 'on_hold'> = {
+  const variantMap: Record<ProjectStatus, 'active' | 'completed' | 'on_hold' | 'pitch'> = {
     active: 'active',
     completed: 'completed',
     on_hold: 'on_hold',
+    pitch: 'pitch',
   }
   const labels: Record<ProjectStatus, string> = {
     active: 'Active',
     completed: 'Completed',
     on_hold: 'On Hold',
+    pitch: 'Pitch / Proposal',
   }
   return <Badge variant={variantMap[status]}>{labels[status]}</Badge>
 }
@@ -141,7 +143,7 @@ export default async function DashboardPage() {
     }
   })
 
-  const activeProjects = projectMetrics.filter(p => p.status === 'active')
+  const activeProjects = projectMetrics.filter(p => p.status === 'active' || p.status === 'pitch')
   const totalWeekHours = activeProjects.reduce((sum, p) => sum + p.thisWeekHours, 0)
   const totalWeekCost = activeProjects.reduce((sum, p) => sum + p.thisWeekCost, 0)
 

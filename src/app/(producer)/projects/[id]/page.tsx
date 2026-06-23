@@ -23,15 +23,17 @@ import type { ProjectStatus, ProjectLink, Expense } from '@/lib/types'
 import { format } from 'date-fns'
 
 function StatusBadge({ status }: { status: ProjectStatus }) {
-  const variantMap: Record<ProjectStatus, 'active' | 'completed' | 'on_hold'> = {
+  const variantMap: Record<ProjectStatus, 'active' | 'completed' | 'on_hold' | 'pitch'> = {
     active: 'active',
     completed: 'completed',
     on_hold: 'on_hold',
+    pitch: 'pitch',
   }
   const labels: Record<ProjectStatus, string> = {
     active: 'Active',
     completed: 'Completed',
     on_hold: 'On Hold',
+    pitch: 'Pitch / Proposal',
   }
   return <Badge variant={variantMap[status]}>{labels[status]}</Badge>
 }
