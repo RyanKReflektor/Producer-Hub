@@ -92,6 +92,46 @@ export default async function ApprovalsPage() {
 
   const groups = Array.from(groupMap.values())
 
+  // Group recent (approved/rejected) entries by person + week — same shape as pending
+  type RecentGroup = {
+    key: string
+    personName: string
+    week: number
+    year: number
+    totalHours: number
+    status: string
+    resolvedAt: string | null
+    projectBreakdown: { projectName: string; hours: number }[]
+  }
+
+  const recentGroupMap = new Map<string, RecentGroup>()
+  for (const entry of (recentEntries || [])) {
+    const key = `${entry.person_id}-${entry.year}-${entry.week_number}-${entry.status}`
+    if (!recentGroupMap.has(key)) {
+      recentGroupMap.set(key, {
+        key,
+        personName: profileMap.get(entry.person_id)?.name ?? 'Unknown',
+        week: entry.week_number,
+        year: entry.year,
+        totalHours: 0,
+        status: entry.status,
+        resolvedAt: entry.updated_at ?? null,
+        projectBreakdown: [],
+      })
+    }
+    const g = recentGroupMap.get(key)!
+    g.totalHours += Number(entry.hours)
+    const projectName = projectMap.get(entry.project_id)?.name ?? 'Unknown project'
+    const existing = g.projectBreakdown.find(p => p.projectName === projectName)
+    if (existing) {
+      existing.hours += Number(entry.hours)
+    } else {
+      g.projectBreakdown.push({ projectName, hours: Number(entry.hours) })
+    }
+  }
+
+  const recentGroups = Array.from(recentGroupMap.values())
+
   return (
     <div className="p-8">
       <div className="mb-8">
@@ -165,7 +205,7 @@ export default async function ApprovalsPage() {
         <div className="px-4 py-3 border-b border-neutral-100">
           <h2 className="text-sm font-semibold text-neutral-900">Recent Activity</h2>
         </div>
-        {!recentEntries || recentEntries.length === 0 ? (
+        {recentGroups.length === 0 ? (
           <div className="px-4 py-8 text-center text-neutral-500 text-sm">
             No recent approval activity.
           </div>
@@ -174,30 +214,40 @@ export default async function ApprovalsPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Person</TableHead>
-                <TableHead>Project</TableHead>
                 <TableHead>Week</TableHead>
+                <TableHead>Projects</TableHead>
                 <TableHead className="text-right">Hours</TableHead>
+                <TableHead>Resolved</TableHead>
                 <TableHead>Status</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {recentEntries.map(entry => (
-                <TableRow key={entry.id}>
-                  <TableCell className="text-neutral-700">
-                    {profileMap.get(entry.person_id)?.name ?? 'Unknown'}
-                  </TableCell>
-                  <TableCell className="text-neutral-700">
-                    {projectMap.get(entry.project_id)?.name ?? 'Unknown'}
-                  </TableCell>
+              {recentGroups.map(group => (
+                <TableRow key={group.key}>
+                  <TableCell className="font-medium text-neutral-900">{group.personName}</TableCell>
                   <TableCell className="font-mono text-neutral-600 text-sm">
-                    W{entry.week_number} {entry.year}
-                  </TableCell>
-                  <TableCell className="text-right font-mono">
-                    {formatHours(Number(entry.hours))}
+                    W{group.week} {group.year}
                   </TableCell>
                   <TableCell>
-                    <Badge variant={entry.status as 'approved' | 'rejected'}>
-                      {entry.status === 'approved' ? 'Approved' : 'Rejected'}
+                    <div className="space-y-0.5">
+                      {group.projectBreakdown.map(p => (
+                        <div key={p.projectName} className="text-xs text-neutral-500">
+                          {p.projectName} — <span className="font-mono">{formatHours(p.hours)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-right font-mono font-medium text-neutral-900">
+                    {formatHours(group.totalHours)}
+                  </TableCell>
+                  <TableCell className="text-neutral-500 text-xs">
+                    {group.resolvedAt
+                      ? format(new Date(group.resolvedAt), 'MMM d, yyyy')
+                      : '—'}
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={group.status as 'approved' | 'rejected'}>
+                      {group.status === 'approved' ? 'Approved' : 'Rejected'}
                     </Badge>
                   </TableCell>
                 </TableRow>
