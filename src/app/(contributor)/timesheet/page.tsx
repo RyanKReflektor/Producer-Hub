@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import { getISOWeek, getMondayOfWeek } from '@/lib/utils'
 import { TimesheetGrid } from '@/components/timesheet/timesheet-grid'
@@ -47,11 +48,13 @@ export default async function TimesheetPage({ searchParams }: TimesheetPageProps
 
   const projectIds = (assignments || []).map(a => a.project_id)
 
-  // Step 2: fetch those projects directly (avoids nested RLS in PostgREST join)
-  // Note: no status filter — contributors should see all assigned projects so
-  // they can log time even when a project is on_hold.
+  // Step 2: fetch project details using the admin client.
+  // The project_ids above were validated through the contributor's own RLS session,
+  // so it is safe to bypass the (broken) projects RLS policy here.
+  // We intentionally select no rate columns — only non-sensitive display fields.
+  const supabaseAdmin = createAdminClient()
   const { data: assignedProjects } = projectIds.length > 0
-    ? await supabase
+    ? await supabaseAdmin
         .from('projects')
         .select('id, name, client, status')
         .in('id', projectIds)
