@@ -39,16 +39,23 @@ export default async function TimesheetPage({ searchParams }: TimesheetPageProps
   const { week: thisWeek, year: thisYear } = getISOWeek(now)
   const currentMonday = getMondayOfWeek(thisWeek, thisYear)
 
-  // Get assigned projects
+  // Step 1: get project IDs this person is assigned to
   const { data: assignments } = await supabase
     .from('project_assignments')
-    .select('project_id, project:projects(id, name, client, status)')
+    .select('project_id')
     .eq('person_id', user.id)
 
-  const assignedProjects = (assignments || [])
-    .map(a => a.project)
-    .filter(Boolean)
-    .filter(p => p!.status === 'active')
+  const projectIds = (assignments || []).map(a => a.project_id)
+
+  // Step 2: fetch those projects directly (avoids nested RLS in PostgREST join)
+  const { data: assignedProjects } = projectIds.length > 0
+    ? await supabase
+        .from('projects')
+        .select('id, name, client, status')
+        .in('id', projectIds)
+        .eq('status', 'active')
+        .order('name')
+    : { data: [] }
 
   // Get time entries for this week
   const { data: timeEntries } = await supabase
@@ -69,7 +76,7 @@ export default async function TimesheetPage({ searchParams }: TimesheetPageProps
       </div>
 
       <TimesheetGrid
-        projects={assignedProjects as Array<{ id: string; name: string; client: string; status: string }>}
+        projects={(assignedProjects || []) as Array<{ id: string; name: string; client: string; status: string }>}
         timeEntries={timeEntries || []}
         monday={monday}
         week={currentWeekNum}
