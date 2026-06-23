@@ -13,6 +13,7 @@ import {
 import { BurnChart } from '@/components/projects/burn-chart'
 import { ProjectDetailActions } from '@/components/projects/project-detail-actions'
 import { ApproveActions } from '@/components/approvals/approve-actions'
+import { AssignPeople } from '@/components/projects/assign-people'
 import type { ProjectStatus } from '@/lib/types'
 import { format } from 'date-fns'
 
@@ -55,6 +56,14 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
     .in('status', ['submitted', 'approved'])
     .order('year', { ascending: true })
     .order('week_number', { ascending: true })
+
+  // Get all active profiles (for assignment dialog)
+  const { data: allProfiles } = await supabase
+    .from('profiles')
+    .select('id, name, email, person_type, internal_rate, external_rate, active, role')
+    .eq('active', true)
+    .eq('role', 'contributor')
+    .order('name')
 
   // Get pending entries for approval
   const { data: pendingEntries } = await supabase
@@ -175,6 +184,22 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
   }
   const approvalGroups = Array.from(pendingGroups.values())
 
+  // Build assigned people list for the panel
+  const assignedPeople = (assignments || []).map(a => ({
+    assignment_id: a.id,
+    person_id: a.person_id,
+    name: (a.profile as any)?.name ?? 'Unknown',
+    email: (a.profile as any)?.email ?? '',
+    person_type: (a.profile as any)?.person_type ?? null,
+    internal_rate_override: a.internal_rate_override,
+    external_rate_override: a.external_rate_override,
+    default_internal_rate: (a.profile as any)?.internal_rate ?? null,
+    default_external_rate: (a.profile as any)?.external_rate ?? null,
+  }))
+
+  const assignedIds = new Set(assignedPeople.map(a => a.person_id))
+  const availablePeople = (allProfiles || []).filter(p => !assignedIds.has(p.id))
+
   return (
     <div className="p-8">
       {/* Header */}
@@ -235,6 +260,13 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
       <div className="mb-6">
         <BurnChart data={weeklyBurn} currency={project.currency} />
       </div>
+
+      {/* Assigned people management */}
+      <AssignPeople
+        projectId={project.id}
+        assigned={assignedPeople}
+        available={availablePeople as any}
+      />
 
       {/* People breakdown */}
       <div className="bg-white border border-neutral-200 rounded-[4px] mb-6">
