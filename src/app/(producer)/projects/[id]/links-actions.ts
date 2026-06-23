@@ -74,6 +74,7 @@ export type DiscoveryResult = {
 export async function discoverResources(
   projectName: string,
   clientName: string,
+  extraTerms: string[] = [],
 ): Promise<DiscoveryResult> {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -85,7 +86,7 @@ export async function discoverResources(
 
   const [slackResult, notionResult, driveResult] = await Promise.allSettled([
     process.env.SLACK_BOT_TOKEN
-      ? searchSlack(projectName, clientName, process.env.SLACK_BOT_TOKEN)
+      ? searchSlack(projectName, clientName, process.env.SLACK_BOT_TOKEN, extraTerms)
       : Promise.reject(new Error('__UNCONFIGURED__')),
     process.env.NOTION_API_KEY
       ? searchNotion(projectName, process.env.NOTION_API_KEY)
@@ -118,25 +119,21 @@ async function searchSlack(
   projectName: string,
   clientName: string,
   token: string,
+  extraTerms: string[] = [],
 ): Promise<DiscoveryMatch[]> {
-  const [teamRes, channelRes] = await Promise.all([
+  const [teamRes, channels] = await Promise.all([
     fetch('https://slack.com/api/team.info', {
       headers: { Authorization: `Bearer ${token}` },
     }).then(r => r.json()),
-    fetch(
-      'https://slack.com/api/conversations.list?limit=1000&types=public_channel,private_channel&exclude_archived=true',
-      { headers: { Authorization: `Bearer ${token}` } },
-    ).then(r => r.json()),
+    fetchAllSlackChannels(token),
   ])
 
-  if (!channelRes.ok) throw new Error(channelRes.error ?? 'Slack API error')
-
   const domain: string | undefined = teamRes.team?.domain
-  const terms = buildTerms(projectName, clientName)
+  const terms = [...buildTerms(projectName, clientName), ...extraTerms.map(t => t.toLowerCase().trim()).filter(Boolean)]
 
-  return ((channelRes.channels ?? []) as any[])
+  return channels
     .filter(c => terms.some(t => (c.name as string).toLowerCase().includes(t)))
-    .slice(0, 3)
+    .slice(0, 5)
     .map(c => ({
       id: `slack-${c.id}`,
       tool: 'slack' as const,
@@ -145,6 +142,32 @@ async function searchSlack(
         ? `https://${domain}.slack.com/archives/${c.id}`
         : `https://slack.com/archives/${c.id}`,
     }))
+}
+
+async function fetchAllSlackChannels(token: string): Promise<any[]> {
+  const all: any[] = []
+  let cursor: string | undefined
+
+  // Page through up to 10,000 channels (10 pages × 1,000)
+  for (let page = 0; page < 10; page++) {
+    const url = new URL('https://slack.com/api/conversations.list')
+    url.searchParams.set('limit', '1000')
+    url.searchParams.set('types', 'public_channel,private_channel')
+    url.searchParams.set('exclude_archived', 'true')
+    if (cursor) url.searchParams.set('cursor', cursor)
+
+    const res = await fetch(url.toString(), {
+      headers: { Authorization: `Bearer ${token}` },
+    }).then(r => r.json())
+
+    if (!res.ok) throw new Error(res.error ?? 'Slack API error')
+    all.push(...(res.channels ?? []))
+
+    cursor = res.response_metadata?.next_cursor
+    if (!cursor) break
+  }
+
+  return all
 }
 
 async function searchNotion(projectName: string, key: string): Promise<DiscoveryMatch[]> {

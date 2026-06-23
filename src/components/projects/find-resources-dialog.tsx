@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -9,7 +9,7 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Loader2, AlertCircle } from 'lucide-react'
+import { Loader2, AlertCircle, Search } from 'lucide-react'
 import { discoverResources, addProjectLink } from '@/app/(producer)/projects/[id]/links-actions'
 import type { DiscoveryMatch, DiscoveryResult } from '@/app/(producer)/projects/[id]/links-actions'
 import type { ProjectLink } from '@/lib/types'
@@ -34,20 +34,31 @@ export function FindResourcesDialog({
   clientName,
   onLinksAdded,
 }: FindResourcesDialogProps) {
-  const [status, setStatus] = useState<'loading' | 'done' | 'error'>('loading')
+  const [status, setStatus] = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
+  const [searchTerms, setSearchTerms] = useState('')
   const [result, setResult] = useState<DiscoveryResult | null>(null)
   const [selection, setSelection] = useState<SelectionMap>(new Map())
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
 
-  useEffect(() => {
-    if (!open) return
+  function handleClose() {
+    setStatus('idle')
+    setResult(null)
+    setSelection(new Map())
+    setSaveError(null)
+    setSearchTerms('')
+    onClose()
+  }
+
+  function runSearch() {
     setStatus('loading')
     setResult(null)
     setSelection(new Map())
     setSaveError(null)
 
-    discoverResources(projectName, clientName)
+    const extra = searchTerms.split(',').map(t => t.trim()).filter(Boolean)
+
+    discoverResources(projectName, clientName, extra)
       .then(r => {
         setResult(r)
         const map: SelectionMap = new Map()
@@ -59,7 +70,7 @@ export function FindResourcesDialog({
         setResult({ matches: [], unconfigured: [], errors: [{ service: 'Discovery', message: e.message }] })
         setStatus('error')
       })
-  }, [open, projectName, clientName])
+  }
 
   const toggle = (id: string) => {
     setSelection(prev => {
@@ -108,20 +119,45 @@ export function FindResourcesDialog({
     : []
 
   return (
-    <Dialog open={open} onOpenChange={v => { if (!v) onClose() }}>
+    <Dialog open={open} onOpenChange={v => { if (!v) handleClose() }}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>Find Resources</DialogTitle>
         </DialogHeader>
 
+        {/* Search input */}
+        <div className="flex gap-2">
+          <div className="flex-1">
+            <input
+              type="text"
+              value={searchTerms}
+              onChange={e => setSearchTerms(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && runSearch()}
+              placeholder={`${projectName}, ${clientName} (add extra keywords separated by commas)`}
+              className="w-full text-sm border border-neutral-200 rounded-[4px] px-3 py-2 focus:outline-none focus:ring-1 focus:ring-neutral-900"
+              disabled={status === 'loading'}
+            />
+          </div>
+          <Button size="sm" onClick={runSearch} disabled={status === 'loading'} className="shrink-0">
+            {status === 'loading' ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
+            {status === 'loading' ? 'Searching…' : 'Search'}
+          </Button>
+        </div>
+
         {status === 'loading' && (
-          <div className="flex flex-col items-center justify-center py-12 gap-3">
+          <div className="flex flex-col items-center justify-center py-8 gap-3">
             <Loader2 size={24} className="animate-spin text-neutral-400" />
             <p className="text-sm text-neutral-500">Searching Slack, Notion, and Drive…</p>
           </div>
         )}
 
-        {status !== 'loading' && result && (
+        {status === 'idle' && (
+          <div className="py-6 text-center">
+            <p className="text-sm text-neutral-400">Enter search terms above and click Search.</p>
+          </div>
+        )}
+
+        {status !== 'loading' && status !== 'idle' && result && (
           <div className="space-y-4">
             {/* Results */}
             {grouped.length > 0 ? (
@@ -212,7 +248,7 @@ export function FindResourcesDialog({
             )}
 
             <div className="flex items-center justify-end gap-2 pt-2 border-t border-neutral-100">
-              <Button variant="outline" size="sm" onClick={onClose} disabled={saving}>
+              <Button variant="outline" size="sm" onClick={handleClose} disabled={saving}>
                 Cancel
               </Button>
               <Button
