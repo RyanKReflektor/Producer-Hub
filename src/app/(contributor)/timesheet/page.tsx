@@ -48,12 +48,13 @@ export default async function TimesheetPage({ searchParams }: TimesheetPageProps
   const projectIds = (assignments || []).map(a => a.project_id)
 
   // Step 2: fetch those projects directly (avoids nested RLS in PostgREST join)
+  // Note: no status filter — contributors should see all assigned projects so
+  // they can log time even when a project is on_hold.
   const { data: assignedProjects } = projectIds.length > 0
     ? await supabase
         .from('projects')
         .select('id, name, client, status')
         .in('id', projectIds)
-        .eq('status', 'active')
         .order('name')
     : { data: [] }
 

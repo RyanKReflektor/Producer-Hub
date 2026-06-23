@@ -162,9 +162,14 @@ export function TimesheetGrid({
 
   if (projects.length === 0) {
     return (
-      <div className="bg-white border border-neutral-200 rounded-[4px] p-12 text-center">
-        <p className="text-neutral-500 text-sm mb-2">You have no assigned projects.</p>
-        <p className="text-neutral-400 text-xs">Contact your producer to get assigned to a project.</p>
+      <div className="bg-white border border-neutral-200 rounded-[4px] p-12 text-center space-y-2">
+        <p className="text-neutral-600 text-sm font-medium">No projects assigned yet.</p>
+        <p className="text-neutral-400 text-xs">
+          Ask your producer to assign you to a project. Once assigned, your projects will appear here.
+        </p>
+        <p className="text-neutral-300 text-xs pt-2 font-mono">
+          Debug: visiting <span className="underline">/api/debug</span> in this browser tab will show your session data.
+        </p>
       </div>
     )
   }
