@@ -39,14 +39,10 @@ export default async function DashboardPage() {
     .select('*')
     .order('created_at', { ascending: false })
 
-  // Get time entries for this week
+  // Get time entries for this week (no embeds — FK resolution can fail silently)
   const { data: weekEntries } = await supabase
     .from('time_entries')
-    .select(`
-      *,
-      profile:profiles(name, internal_rate),
-      project_assignment:project_assignments(internal_rate_override)
-    `)
+    .select('id, person_id, project_id, hours, week_number, year, status')
     .eq('week_number', week)
     .eq('year', year)
     .in('status', ['submitted', 'approved'])
@@ -54,12 +50,32 @@ export default async function DashboardPage() {
   // Get all-time entries for budget calc
   const { data: allEntries } = await supabase
     .from('time_entries')
-    .select(`
-      *,
-      profile:profiles(name, internal_rate),
-      project_assignment:project_assignments(internal_rate_override, project_id)
-    `)
+    .select('id, person_id, project_id, hours, week_number, year, status')
     .in('status', ['submitted', 'approved'])
+
+  // Fetch rates and overrides separately
+  const entryPersonIds = [...new Set([
+    ...(weekEntries || []).map(e => e.person_id),
+    ...(allEntries || []).map(e => e.person_id),
+  ])]
+  const { data: rateProfiles } = entryPersonIds.length > 0
+    ? await supabase.from('profiles').select('id, name, internal_rate').in('id', entryPersonIds)
+    : { data: [] }
+  const rateProfileMap = new Map((rateProfiles || []).map(p => [p.id, p]))
+
+  const { data: assignments } = await supabase
+    .from('project_assignments')
+    .select('person_id, project_id, internal_rate_override')
+
+  // Build assignment map keyed by "person_id:project_id"
+  const assignmentMap = new Map(
+    (assignments || []).map(a => [`${a.person_id}:${a.project_id}`, a])
+  )
+
+  const effectiveRate = (personId: string, projectId: string) => {
+    const a = assignmentMap.get(`${personId}:${projectId}`)
+    return Number(a?.internal_rate_override ?? rateProfileMap.get(personId)?.internal_rate ?? 0)
+  }
 
   // Calculate metrics per project
   const projectMetrics = (projects || []).map(project => {
@@ -69,16 +85,11 @@ export default async function DashboardPage() {
     const thisWeekHours = thisWeekProjectEntries.reduce((sum, e) => sum + Number(e.hours), 0)
     const totalHours = allProjectEntries.reduce((sum, e) => sum + Number(e.hours), 0)
 
-    // Calculate costs using effective rate
-    const thisWeekCost = thisWeekProjectEntries.reduce((sum, e) => {
-      const rate = e.project_assignment?.internal_rate_override ?? e.profile?.internal_rate ?? 0
-      return sum + (Number(e.hours) * Number(rate))
-    }, 0)
+    const thisWeekCost = thisWeekProjectEntries.reduce((sum, e) =>
+      sum + (Number(e.hours) * effectiveRate(e.person_id, e.project_id)), 0)
 
-    const totalCost = allProjectEntries.reduce((sum, e) => {
-      const rate = e.project_assignment?.internal_rate_override ?? e.profile?.internal_rate ?? 0
-      return sum + (Number(e.hours) * Number(rate))
-    }, 0)
+    const totalCost = allProjectEntries.reduce((sum, e) =>
+      sum + (Number(e.hours) * effectiveRate(e.person_id, e.project_id)), 0)
 
     let budgetRemaining: number | null = null
     let budgetPct: number | null = null

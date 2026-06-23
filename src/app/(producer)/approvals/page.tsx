@@ -15,25 +15,41 @@ import { ApproveActions } from '@/components/approvals/approve-actions'
 import { format } from 'date-fns'
 
 export default async function ApprovalsPage() {
-  // Use admin client for all reads on this page. The middleware already
-  // verified the session is a producer; we use admin so PostgREST join
-  // RLS issues don't silently swallow rows.
   const supabase = createAdminClient()
 
-  const { data: submittedEntries } = await supabase
+  // Fetch time entries without embeds — embed FK resolution can fail silently
+  const { data: submittedEntries, error: submittedError } = await supabase
     .from('time_entries')
-    .select('*, profile:profiles(id, name), project:projects(id, name, client)')
+    .select('id, person_id, project_id, hours, week_number, year, submitted_at, status')
     .eq('status', 'submitted')
-    .order('submitted_at', { ascending: false })
+    .order('year', { ascending: false })
+    .order('week_number', { ascending: false })
 
   const { data: recentEntries } = await supabase
     .from('time_entries')
-    .select('*, profile:profiles(id, name), project:projects(id, name, client)')
+    .select('id, person_id, project_id, hours, week_number, year, status, updated_at')
     .in('status', ['approved', 'rejected'])
     .order('updated_at', { ascending: false })
     .limit(20)
 
-  // Group submitted by person+week
+  // Gather unique IDs for lookup
+  const allEntries = [...(submittedEntries || []), ...(recentEntries || [])]
+  const personIds = [...new Set(allEntries.map(e => e.person_id))]
+  const projectIds = [...new Set(allEntries.map(e => e.project_id))]
+
+  // Fetch profiles and projects by ID — no embeds, no FK magic
+  const { data: profiles } = personIds.length > 0
+    ? await supabase.from('profiles').select('id, name, email').in('id', personIds)
+    : { data: [] }
+
+  const { data: projects } = projectIds.length > 0
+    ? await supabase.from('projects').select('id, name, client').in('id', projectIds)
+    : { data: [] }
+
+  const profileMap = new Map((profiles || []).map(p => [p.id, p]))
+  const projectMap = new Map((projects || []).map(p => [p.id, p]))
+
+  // Group submitted entries by person + week
   type EntryGroup = {
     key: string
     personName: string
@@ -41,7 +57,7 @@ export default async function ApprovalsPage() {
     week: number
     year: number
     totalHours: number
-    submittedAt: string
+    submittedAt: string | null
     entryIds: string[]
     projectBreakdown: { projectName: string; hours: number }[]
   }
@@ -52,12 +68,12 @@ export default async function ApprovalsPage() {
     if (!groupMap.has(key)) {
       groupMap.set(key, {
         key,
-        personName: entry.profile?.name ?? 'Unknown',
+        personName: profileMap.get(entry.person_id)?.name ?? 'Unknown',
         personId: entry.person_id,
         week: entry.week_number,
         year: entry.year,
         totalHours: 0,
-        submittedAt: entry.submitted_at ?? '',
+        submittedAt: entry.submitted_at ?? null,
         entryIds: [],
         projectBreakdown: [],
       })
@@ -65,7 +81,7 @@ export default async function ApprovalsPage() {
     const g = groupMap.get(key)!
     g.totalHours += Number(entry.hours)
     g.entryIds.push(entry.id)
-    const projectName = entry.project?.name ?? 'Unknown'
+    const projectName = projectMap.get(entry.project_id)?.name ?? 'Unknown project'
     const existing = g.projectBreakdown.find(p => p.projectName === projectName)
     if (existing) {
       existing.hours += Number(entry.hours)
@@ -81,6 +97,9 @@ export default async function ApprovalsPage() {
       <div className="mb-8">
         <h1 className="text-xl font-semibold text-neutral-900">Approvals</h1>
         <p className="text-sm text-neutral-500 mt-1">Review and approve submitted timesheets</p>
+        {submittedError && (
+          <p className="text-xs text-red-500 mt-1 font-mono">Query error: {submittedError.message}</p>
+        )}
       </div>
 
       {/* Pending */}
@@ -127,7 +146,9 @@ export default async function ApprovalsPage() {
                     {formatHours(group.totalHours)}
                   </TableCell>
                   <TableCell className="text-neutral-500 text-xs">
-                    {group.submittedAt ? format(new Date(group.submittedAt), 'MMM d, yyyy h:mm a') : '—'}
+                    {group.submittedAt
+                      ? format(new Date(group.submittedAt), 'MMM d, yyyy h:mm a')
+                      : '—'}
                   </TableCell>
                   <TableCell>
                     <ApproveActions entryIds={group.entryIds} />
@@ -139,7 +160,7 @@ export default async function ApprovalsPage() {
         )}
       </div>
 
-      {/* Recent */}
+      {/* Recent activity */}
       <div className="bg-white border border-neutral-200 rounded-[4px]">
         <div className="px-4 py-3 border-b border-neutral-100">
           <h2 className="text-sm font-semibold text-neutral-900">Recent Activity</h2>
@@ -162,12 +183,18 @@ export default async function ApprovalsPage() {
             <TableBody>
               {recentEntries.map(entry => (
                 <TableRow key={entry.id}>
-                  <TableCell className="text-neutral-700">{entry.profile?.name}</TableCell>
-                  <TableCell className="text-neutral-700">{entry.project?.name}</TableCell>
+                  <TableCell className="text-neutral-700">
+                    {profileMap.get(entry.person_id)?.name ?? 'Unknown'}
+                  </TableCell>
+                  <TableCell className="text-neutral-700">
+                    {projectMap.get(entry.project_id)?.name ?? 'Unknown'}
+                  </TableCell>
                   <TableCell className="font-mono text-neutral-600 text-sm">
                     W{entry.week_number} {entry.year}
                   </TableCell>
-                  <TableCell className="text-right font-mono">{formatHours(Number(entry.hours))}</TableCell>
+                  <TableCell className="text-right font-mono">
+                    {formatHours(Number(entry.hours))}
+                  </TableCell>
                   <TableCell>
                     <Badge variant={entry.status as 'approved' | 'rejected'}>
                       {entry.status === 'approved' ? 'Approved' : 'Rejected'}
