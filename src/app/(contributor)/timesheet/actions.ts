@@ -76,3 +76,23 @@ export async function submitWeek(week: number, year: number) {
   revalidatePath('/approvals')
   revalidatePath('/dashboard')
 }
+
+export async function unlockWeek(week: number, year: number) {
+  const supabase = createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Unauthorized')
+
+  const { error } = await supabase
+    .from('time_entries')
+    .update({ status: 'draft', submitted_at: null })
+    .eq('person_id', user.id)
+    .eq('week_number', week)
+    .eq('year', year)
+    .in('status', ['submitted', 'approved', 'rejected'])
+
+  if (error) throw new Error(error.message)
+  revalidatePath('/timesheet')
+  revalidatePath('/approvals')
+  revalidatePath('/projects', 'layout')
+  revalidatePath('/dashboard')
+}

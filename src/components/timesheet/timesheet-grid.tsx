@@ -3,10 +3,10 @@
 import { useState, useCallback, useTransition } from 'react'
 import { format } from 'date-fns'
 import { getWeekDays } from '@/lib/utils'
-import { saveTimeEntry, submitWeek } from '@/app/(contributor)/timesheet/actions'
+import { saveTimeEntry, submitWeek, unlockWeek } from '@/app/(contributor)/timesheet/actions'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Send, Lock } from 'lucide-react'
+import { Send, Lock, Pencil } from 'lucide-react'
 import type { TimeEntry, EntryStatus } from '@/lib/types'
 
 interface Project {
@@ -72,12 +72,13 @@ export function TimesheetGrid({
   const [isPending, startTransition] = useTransition()
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [submitSuccess, setSubmitSuccess] = useState(false)
+  const [isUnlocked, setIsUnlocked] = useState(false)
+  const [unlockError, setUnlockError] = useState<string | null>(null)
 
   // Determine overall week status
   const weekEntries = timeEntries
-  const hasSubmitted = weekEntries.some(e => e.status === 'submitted' || e.status === 'approved')
   const weekStatus: EntryStatus = weekEntries.length === 0 ? 'draft' : getRowStatus(weekEntries)
-  const isLocked = weekStatus === 'submitted' || weekStatus === 'approved'
+  const isLocked = !isUnlocked && (weekStatus === 'submitted' || weekStatus === 'approved')
 
   const handleCellBlur = useCallback(
     async (projectId: string, date: string, value: string) => {
@@ -128,8 +129,29 @@ export function TimesheetGrid({
       try {
         await submitWeek(week, year)
         setSubmitSuccess(true)
+        setIsUnlocked(false)
       } catch (err) {
         setSubmitError(err instanceof Error ? err.message : 'Failed to submit')
+      }
+    })
+  }
+
+  function handleUnlockWeek() {
+    setUnlockError(null)
+    startTransition(async () => {
+      try {
+        await unlockWeek(week, year)
+        setEntryMap(prev => {
+          const next = new Map(prev)
+          for (const [key, val] of next) {
+            next.set(key, { ...val, status: 'draft' })
+          }
+          return next
+        })
+        setIsUnlocked(true)
+        setSubmitSuccess(false)
+      } catch (err) {
+        setUnlockError(err instanceof Error ? err.message : 'Failed to unlock week')
       }
     })
   }
@@ -179,17 +201,24 @@ export function TimesheetGrid({
       {/* Status bar */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
-          <Badge variant={getStatusVariant(weekStatus)}>
-            {weekStatus === 'draft' ? 'Draft'
+          <Badge variant={getStatusVariant(isUnlocked ? 'draft' : weekStatus)}>
+            {isUnlocked ? 'Draft'
+              : weekStatus === 'draft' ? 'Draft'
               : weekStatus === 'submitted' ? 'Submitted for review'
               : weekStatus === 'approved' ? 'Approved'
               : 'Rejected'}
           </Badge>
           {submitSuccess && (
-            <span className="text-xs text-green-600 font-medium">Week submitted!</span>
+            <span className="text-xs text-green-600 font-medium">Week submitted for re-approval.</span>
           )}
           {submitError && (
             <span className="text-xs text-red-600">{submitError}</span>
+          )}
+          {unlockError && (
+            <span className="text-xs text-red-600">{unlockError}</span>
+          )}
+          {isUnlocked && (
+            <span className="text-xs text-amber-600 font-medium">Editing — re-submit to request approval.</span>
           )}
         </div>
 
@@ -205,9 +234,21 @@ export function TimesheetGrid({
         )}
 
         {isLocked && (
-          <div className="flex items-center gap-1.5 text-xs text-neutral-500">
-            <Lock size={12} />
-            {weekStatus === 'submitted' ? 'Awaiting approval' : 'Approved — read only'}
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 text-xs text-neutral-400">
+              <Lock size={11} />
+              {weekStatus === 'submitted' ? 'Awaiting approval' : 'Approved'}
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleUnlockWeek}
+              disabled={isPending}
+              className="h-7 text-xs px-2"
+            >
+              <Pencil size={11} />
+              {isPending ? 'Unlocking...' : 'Edit Week'}
+            </Button>
           </div>
         )}
       </div>
