@@ -63,10 +63,19 @@ export default async function ContributorDashboard() {
     : { data: [] }
 
   return (
-    <div className="p-8 max-w-3xl">
-      <h1 className="text-2xl font-semibold text-neutral-900 dark:text-white mb-1">Welcome, {profile?.name ?? 'there'}</h1>
-      <p className="text-sm text-neutral-500 dark:text-neutral-400 mb-8">Week {week}, {year}</p>
+    <>
+      {/* Hero header */}
+      <div className="bg-[#0F0F0F] px-8 py-12">
+        <h1 className="text-6xl font-light text-white leading-none tracking-tight">
+          Welcome, {profile?.name ?? 'there'}
+        </h1>
+        <div className="mt-5 flex items-center gap-4">
+          <div className="w-8 h-px bg-neutral-700" />
+          <p className="text-sm text-neutral-500">Week {week}, {year}</p>
+        </div>
+      </div>
 
+    <div className="p-8 max-w-3xl">
       {/* Hours this week */}
       <section className="mb-8">
         <h2 className="text-sm font-semibold text-neutral-700 dark:text-neutral-300 mb-3 uppercase tracking-wider text-xs">Hours This Week</h2>
@@ -122,5 +131,6 @@ export default async function ContributorDashboard() {
         )}
       </section>
     </div>
+    </>
   )
 }

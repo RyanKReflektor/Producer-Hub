@@ -131,13 +131,19 @@ export default async function DashboardPage() {
   const totalWeekCost = activeProjects.reduce((sum, p) => sum + p.thisWeekCost, 0)
 
   return (
-    <div className="p-8">
-      {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-2xl font-semibold text-neutral-900">Welcome, {profile?.name ?? 'there'}</h1>
-        <p className="text-sm text-neutral-500 mt-1">Week {week}, {year}</p>
+    <>
+      {/* Hero header */}
+      <div className="bg-[#0F0F0F] px-8 py-12">
+        <h1 className="text-6xl font-light text-white leading-none tracking-tight">
+          Welcome, {profile?.name ?? 'there'}
+        </h1>
+        <div className="mt-5 flex items-center gap-4">
+          <div className="w-8 h-px bg-neutral-700" />
+          <p className="text-sm text-neutral-500">Week {week}, {year}</p>
+        </div>
       </div>
 
+    <div className="p-8">
       {/* Summary stats */}
       <div className="grid grid-cols-3 gap-4 mb-8">
         <div className="bg-white border border-neutral-200 rounded-[4px] p-4">
@@ -228,5 +234,6 @@ export default async function DashboardPage() {
         </Table>
       </div>
     </div>
+    </>
   )
 }
