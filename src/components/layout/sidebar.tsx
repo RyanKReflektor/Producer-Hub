@@ -11,8 +11,11 @@ import {
   Calendar,
   BarChart2,
   LogOut,
+  Sun,
+  Moon,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { useTheme } from './theme-context'
 import type { Profile } from '@/lib/types'
 
 interface SidebarProps {
@@ -36,6 +39,7 @@ const contributorNav = [
 export function Sidebar({ profile, role }: SidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
+  const { theme, toggle } = useTheme()
   const nav = role === 'producer' ? producerNav : contributorNav
 
   async function handleSignOut() {
@@ -49,7 +53,7 @@ export function Sidebar({ profile, role }: SidebarProps) {
     <div className="flex flex-col h-full bg-[#0F0F0F] w-56 shrink-0">
       {/* Logo */}
       <div className="flex items-center gap-2.5 px-4 py-5 border-b border-neutral-800">
-        <div className="w-6 h-6 bg-amber-600 rounded-[4px] shrink-0" />
+        <div className="w-6 h-6 bg-[#3E0BE5] rounded-[4px] shrink-0" />
         <span className="text-white font-semibold text-sm tracking-tight">Producer Hub</span>
       </div>
 
@@ -63,7 +67,7 @@ export function Sidebar({ profile, role }: SidebarProps) {
               href={href}
               className={`flex items-center gap-2.5 px-3 py-2 rounded-[4px] text-sm transition-colors ${
                 isActive
-                  ? 'bg-neutral-800 text-white border-l-2 border-amber-600 pl-[10px]'
+                  ? 'bg-neutral-800 text-white border-l-2 border-[#3E0BE5] pl-[10px]'
                   : 'text-neutral-400 hover:bg-neutral-900 hover:text-neutral-200'
               }`}
             >
@@ -87,6 +91,13 @@ export function Sidebar({ profile, role }: SidebarProps) {
             <p className="text-neutral-500 text-xs capitalize">{profile.role}</p>
           </div>
         </div>
+        <button
+          onClick={toggle}
+          className="flex items-center gap-2 w-full px-2 py-1.5 text-neutral-500 hover:text-neutral-300 text-xs transition-colors rounded-[4px] hover:bg-neutral-900 mb-0.5"
+        >
+          {theme === 'dark' ? <Sun size={13} /> : <Moon size={13} />}
+          {theme === 'dark' ? 'Light mode' : 'Dark mode'}
+        </button>
         <button
           onClick={handleSignOut}
           className="flex items-center gap-2 w-full px-2 py-1.5 text-neutral-500 hover:text-neutral-300 text-xs transition-colors rounded-[4px] hover:bg-neutral-900"

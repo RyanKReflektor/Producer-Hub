@@ -1,4 +1,4 @@
-import { Sidebar } from './sidebar'
+import { AppShellClient } from './app-shell-client'
 import type { Profile } from '@/lib/types'
 
 interface AppShellProps {
@@ -7,12 +7,5 @@ interface AppShellProps {
 }
 
 export function AppShell({ profile, children }: AppShellProps) {
-  return (
-    <div className="flex h-screen overflow-hidden">
-      <Sidebar profile={profile} role={profile.role} />
-      <main className="flex-1 overflow-y-auto bg-[#F8F8F8]">
-        {children}
-      </main>
-    </div>
-  )
+  return <AppShellClient profile={profile}>{children}</AppShellClient>
 }

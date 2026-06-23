@@ -68,11 +68,11 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
     .order('submitted_at', { ascending: false })
 
   // Gather unique person IDs for profile lookup
-  const allPersonIds = [...new Set([
+  const allPersonIds = Array.from(new Set([
     ...(assignments || []).map(a => a.person_id),
     ...(timeEntries || []).map(e => e.person_id),
     ...(pendingEntries || []).map(e => e.person_id),
-  ])]
+  ]))
   const { data: entryProfiles } = allPersonIds.length > 0
     ? await supabase.from('profiles').select('id, name, email, person_type, internal_rate, external_rate').in('id', allPersonIds)
     : { data: [] }

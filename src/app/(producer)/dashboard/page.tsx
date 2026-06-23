@@ -54,10 +54,10 @@ export default async function DashboardPage() {
     .in('status', ['submitted', 'approved'])
 
   // Fetch rates and overrides separately
-  const entryPersonIds = [...new Set([
+  const entryPersonIds = Array.from(new Set([
     ...(weekEntries || []).map(e => e.person_id),
     ...(allEntries || []).map(e => e.person_id),
-  ])]
+  ]))
   const { data: rateProfiles } = entryPersonIds.length > 0
     ? await supabase.from('profiles').select('id, name, internal_rate').in('id', entryPersonIds)
     : { data: [] }

@@ -7,15 +7,15 @@ const badgeVariants = cva(
   {
     variants: {
       variant: {
-        default: 'border-neutral-200 bg-neutral-100 text-neutral-700',
-        draft: 'border-neutral-200 bg-neutral-100 text-neutral-600',
-        submitted: 'border-blue-200 bg-blue-50 text-blue-700',
-        approved: 'border-green-200 bg-green-50 text-green-700',
-        rejected: 'border-red-200 bg-red-50 text-red-700',
-        active: 'border-green-200 bg-green-50 text-green-700',
-        completed: 'border-neutral-200 bg-neutral-100 text-neutral-600',
-        on_hold: 'border-amber-200 bg-amber-50 text-amber-700',
-        warning: 'border-amber-200 bg-amber-50 text-amber-700',
+        default: 'border-neutral-200 bg-neutral-100 text-neutral-700 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300',
+        draft: 'border-neutral-200 bg-neutral-100 text-neutral-600 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-400',
+        submitted: 'border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900 dark:bg-blue-950/50 dark:text-blue-400',
+        approved: 'border-green-200 bg-green-50 text-green-700 dark:border-green-900 dark:bg-green-950/50 dark:text-green-400',
+        rejected: 'border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-400',
+        active: 'border-green-200 bg-green-50 text-green-700 dark:border-green-900 dark:bg-green-950/50 dark:text-green-400',
+        completed: 'border-neutral-200 bg-neutral-100 text-neutral-600 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-400',
+        on_hold: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-400',
+        warning: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-400',
       },
     },
     defaultVariants: {

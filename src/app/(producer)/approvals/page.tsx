@@ -36,8 +36,8 @@ export default async function ApprovalsPage() {
 
   // Gather unique IDs for lookup
   const allEntries = [...(submittedEntries || []), ...(recentEntries || [])]
-  const personIds = [...new Set(allEntries.map(e => e.person_id))]
-  const projectIds = [...new Set(allEntries.map(e => e.project_id))]
+  const personIds = Array.from(new Set(allEntries.map(e => e.person_id)))
+  const projectIds = Array.from(new Set(allEntries.map(e => e.project_id)))
 
   // Fetch profiles and projects by ID — no embeds, no FK magic
   const { data: profiles } = personIds.length > 0

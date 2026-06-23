@@ -143,9 +143,9 @@ export function TimesheetGrid({
         await unlockWeek(week, year)
         setEntryMap(prev => {
           const next = new Map(prev)
-          for (const [key, val] of next) {
+          Array.from(next.entries()).forEach(([key, val]) => {
             next.set(key, { ...val, status: 'draft' })
-          }
+          })
           return next
         })
         setIsUnlocked(true)
