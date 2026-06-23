@@ -217,7 +217,7 @@ export function FindResourcesDialog({
                               className={cn(
                                 'flex items-start gap-3 p-2.5 rounded-[4px] border cursor-pointer transition-colors',
                                 isSelected
-                                  ? 'border-[#3E0BE5] bg-[#3E0BE5]/8 dark:bg-[#3E0BE5]/15'
+                                  ? 'border-[#3E0BE5] bg-[#3E0BE5]/20 dark:bg-[#3E0BE5]/30'
                                   : 'border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800/40 opacity-50'
                               )}
                             >
