@@ -1,8 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect, notFound } from 'next/navigation'
-import { ExternalLink } from 'lucide-react'
-import { ToolIcon, toolLabel } from '@/components/projects/tool-icons'
+import { ContributorResources } from '@/components/projects/contributor-resources'
+import type { LinkTool } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
 
@@ -119,31 +119,7 @@ export default async function ContributorProjectPage({ params }: PageProps) {
       <section className="mb-6">
         <h2 className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider mb-3">Resources</h2>
         <div className="bg-white dark:bg-[#1a1a1a] border border-neutral-200 dark:border-[#2a2a2a] rounded-[4px]">
-          {!links || links.length === 0 ? (
-            <div className="px-4 py-6 text-center">
-              <p className="text-sm text-neutral-400 dark:text-neutral-500">No resources have been added yet.</p>
-            </div>
-          ) : (
-            <ul className="divide-y divide-neutral-100 dark:divide-[#222]">
-              {links.map(link => (
-                <li key={link.id} className="flex items-center gap-3 px-4 py-2.5">
-                  <ToolIcon tool={link.tool} size={14} />
-                  <div className="flex-1 min-w-0">
-                    <a
-                      href={link.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-sm font-medium text-neutral-900 dark:text-[#f0f0f0] hover:underline flex items-center gap-1 min-w-0"
-                    >
-                      <span className="truncate">{link.label}</span>
-                      <ExternalLink size={11} className="shrink-0 text-neutral-400" />
-                    </a>
-                    <p className="text-xs text-neutral-400 dark:text-[#555] truncate">{toolLabel(link.tool)}</p>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
+          <ContributorResources links={(links ?? []) as { id: string; tool: LinkTool; label: string; url: string }[]} />
         </div>
       </section>
 
