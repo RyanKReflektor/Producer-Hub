@@ -21,11 +21,13 @@ create table if not exists public.expenses (
 alter table public.expenses enable row level security;
 
 -- Producers: full access
+drop policy if exists "producers_full_expenses" on public.expenses;
 create policy "producers_full_expenses" on public.expenses
   for all using (get_user_role() = 'producer');
 
 -- Contributors: row-level read for assigned projects only
 -- (column-level filtering of amount is handled in server code)
+drop policy if exists "contributors_read_expenses" on public.expenses;
 create policy "contributors_read_expenses" on public.expenses
   for select using (
     get_user_role() = 'contributor'
