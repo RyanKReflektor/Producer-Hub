@@ -17,7 +17,9 @@ import { ProjectDetailActions } from '@/components/projects/project-detail-actio
 import { ApproveActions } from '@/components/approvals/approve-actions'
 import { AssignPeople } from '@/components/projects/assign-people'
 import { ProjectLinks } from '@/components/projects/project-links'
-import type { ProjectStatus, ProjectLink } from '@/lib/types'
+import { ProjectTabNav } from '@/components/projects/project-tab-nav'
+import { FinancialsTab } from '@/components/projects/financials-tab'
+import type { ProjectStatus, ProjectLink, Expense } from '@/lib/types'
 import { format } from 'date-fns'
 
 function StatusBadge({ status }: { status: ProjectStatus }) {
@@ -34,7 +36,14 @@ function StatusBadge({ status }: { status: ProjectStatus }) {
   return <Badge variant={variantMap[status]}>{labels[status]}</Badge>
 }
 
-export default async function ProjectDetailPage({ params }: { params: { id: string } }) {
+export default async function ProjectDetailPage({
+  params,
+  searchParams,
+}: {
+  params: { id: string }
+  searchParams: { tab?: string }
+}) {
+  const activeTab = searchParams.tab === 'financials' ? 'financials' : 'overview'
   const supabase = createAdminClient()
 
   const { data: project } = await supabase
@@ -45,10 +54,10 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
 
   if (!project) notFound()
 
-  // Get assignments (scalar only — no PostgREST embeds)
+  // Get assignments — include estimated_hours for financials labour table
   const { data: assignments } = await supabase
     .from('project_assignments')
-    .select('id, person_id, project_id, internal_rate_override, external_rate_override')
+    .select('id, person_id, project_id, internal_rate_override, external_rate_override, estimated_hours')
     .eq('project_id', params.id)
 
   // Get project links
@@ -58,7 +67,7 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
     .eq('project_id', params.id)
     .order('added_at', { ascending: true })
 
-  // Get all time entries (submitted + approved) — scalar only
+  // Get all time entries (submitted + approved)
   const { data: timeEntries } = await supabase
     .from('time_entries')
     .select('id, person_id, project_id, hours, week_number, year, status, submitted_at, date')
@@ -67,7 +76,7 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
     .order('year', { ascending: true })
     .order('week_number', { ascending: true })
 
-  // Get pending entries for approval — scalar only
+  // Get pending entries for approval
   const { data: pendingEntries } = await supabase
     .from('time_entries')
     .select('id, person_id, project_id, hours, week_number, year, status, submitted_at')
@@ -75,7 +84,14 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
     .eq('status', 'submitted')
     .order('submitted_at', { ascending: false })
 
-  // Gather unique person IDs for profile lookup
+  // Get expenses
+  const { data: expensesData } = await supabase
+    .from('expenses')
+    .select('*')
+    .eq('project_id', params.id)
+    .order('added_at', { ascending: true })
+
+  // Gather unique person IDs
   const allPersonIds = Array.from(new Set([
     ...(assignments || []).map(a => a.person_id),
     ...(timeEntries || []).map(e => e.person_id),
@@ -108,14 +124,14 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
     return Number(a?.external_rate_override ?? profileMap.get(personId)?.external_rate ?? 0)
   }
 
-  // Calculate totals
+  // Calculate overview totals (submitted + approved)
   const totalHours = (timeEntries || []).reduce((sum, e) => sum + Number(e.hours), 0)
   const totalInternalCost = (timeEntries || []).reduce((sum, e) =>
     sum + Number(e.hours) * effectiveInternalRate(e.person_id), 0)
   const totalExternalCost = (timeEntries || []).reduce((sum, e) =>
     sum + Number(e.hours) * effectiveExternalRate(e.person_id), 0)
 
-  // Budget remaining
+  // Budget remaining (overview)
   let budgetRemaining: number | null = null
   let budgetPct: number | null = null
   if (project.budget_value) {
@@ -145,7 +161,7 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
   }
   const weeklyBurn = Array.from(weekMap.values())
 
-  // Person breakdown
+  // Person breakdown (for overview tab)
   const personMap = new Map<string, { name: string; hours: number; internal_cost: number; external_cost: number }>()
   for (const entry of (timeEntries || [])) {
     if (!personMap.has(entry.person_id)) {
@@ -215,10 +231,36 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
   const assignedIds = new Set(assignedPeople.map(a => a.person_id))
   const availablePeople = (allProfiles || []).filter(p => !assignedIds.has(p.id))
 
+  // Labour rows for financials tab (approved only)
+  const approvedEntries = (timeEntries || []).filter(e => e.status === 'approved')
+  const labourRows = (assignments || []).map(a => {
+    const profile = profileMap.get(a.person_id)
+    const personEntries = approvedEntries.filter(e => e.person_id === a.person_id)
+    const actualHours = personEntries.reduce((sum, e) => sum + Number(e.hours), 0)
+    const internalRate = effectiveInternalRate(a.person_id)
+    const externalRate = effectiveExternalRate(a.person_id)
+    const estimatedHours = a.estimated_hours ? Number(a.estimated_hours) : null
+    return {
+      personId: a.person_id,
+      name: profile?.name ?? 'Unknown',
+      personType: profile?.person_type ?? null,
+      estimatedHours,
+      actualHours,
+      hrsRemaining: estimatedHours !== null ? estimatedHours - actualHours : null,
+      internalRate,
+      actualInternalCost: actualHours * internalRate,
+      externalRate,
+      actualExternalCost: actualHours * externalRate,
+    }
+  })
+
+  // SOW Total for financials (only meaningful for dollar budgets)
+  const sowTotal = project.budget_type === 'dollars' ? Number(project.budget_value) : null
+
   return (
     <div className="p-8">
       {/* Header */}
-      <div className="flex items-start justify-between mb-8">
+      <div className="flex items-start justify-between mb-6">
         <div>
           <div className="flex items-center gap-3 mb-1">
             <h1 className="text-xl font-semibold text-neutral-900">{project.name}</h1>
@@ -235,132 +277,151 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
         <ProjectDetailActions project={project} />
       </div>
 
-      {/* Key metrics */}
-      <div className="grid grid-cols-4 gap-4 mb-8">
-        <div className="bg-white border border-neutral-200 rounded-[4px] p-4">
-          <p className="text-xs text-neutral-500 uppercase tracking-wider mb-1">Total Hours</p>
-          <p className="text-2xl font-mono font-semibold text-neutral-900">{formatHours(totalHours)}</p>
-        </div>
-        <div className="bg-white border border-neutral-200 rounded-[4px] p-4">
-          <p className="text-xs text-neutral-500 uppercase tracking-wider mb-1">Internal Cost</p>
-          <p className="text-2xl font-mono font-semibold text-neutral-900">{formatCurrency(totalInternalCost, project.currency)}</p>
-        </div>
-        <div className="bg-white border border-neutral-200 rounded-[4px] p-4">
-          <p className="text-xs text-neutral-500 uppercase tracking-wider mb-1">External Cost</p>
-          <p className="text-2xl font-mono font-semibold text-neutral-900">{formatCurrency(totalExternalCost, project.currency)}</p>
-        </div>
-        <div className={`border rounded-[4px] p-4 ${
-          budgetPct !== null && budgetPct >= 100 ? 'bg-red-50 border-red-200' :
-          budgetPct !== null && budgetPct >= 80 ? 'bg-amber-50 border-amber-200' :
-          'bg-white border-neutral-200'
-        }`}>
-          <p className="text-xs text-neutral-500 uppercase tracking-wider mb-1">Budget Remaining</p>
-          {project.budget_value ? (
-            <p className={`text-2xl font-mono font-semibold ${
-              budgetPct !== null && budgetPct >= 100 ? 'text-red-600' :
-              budgetPct !== null && budgetPct >= 80 ? 'text-amber-600' :
-              'text-neutral-900'
+      {/* Tab navigation */}
+      <ProjectTabNav activeTab={activeTab} />
+
+      {/* ── Overview tab ─────────────────────────────────────────────────────── */}
+      {activeTab === 'overview' && (
+        <>
+          {/* Key metrics */}
+          <div className="grid grid-cols-4 gap-4 mb-8">
+            <div className="bg-white border border-neutral-200 rounded-[4px] p-4">
+              <p className="text-xs text-neutral-500 uppercase tracking-wider mb-1">Total Hours</p>
+              <p className="text-2xl font-mono font-semibold text-neutral-900">{formatHours(totalHours)}</p>
+            </div>
+            <div className="bg-white border border-neutral-200 rounded-[4px] p-4">
+              <p className="text-xs text-neutral-500 uppercase tracking-wider mb-1">Internal Cost</p>
+              <p className="text-2xl font-mono font-semibold text-neutral-900">{formatCurrency(totalInternalCost, project.currency)}</p>
+            </div>
+            <div className="bg-white border border-neutral-200 rounded-[4px] p-4">
+              <p className="text-xs text-neutral-500 uppercase tracking-wider mb-1">External Cost</p>
+              <p className="text-2xl font-mono font-semibold text-neutral-900">{formatCurrency(totalExternalCost, project.currency)}</p>
+            </div>
+            <div className={`border rounded-[4px] p-4 ${
+              budgetPct !== null && budgetPct >= 100 ? 'bg-red-50 border-red-200' :
+              budgetPct !== null && budgetPct >= 80 ? 'bg-amber-50 border-amber-200' :
+              'bg-white border-neutral-200'
             }`}>
-              {project.budget_type === 'hours'
-                ? formatHours(budgetRemaining ?? 0)
-                : formatCurrency(budgetRemaining ?? 0, project.currency)}
-            </p>
-          ) : (
-            <p className="text-lg text-neutral-400">No budget set</p>
-          )}
-        </div>
-      </div>
-
-      {/* Chart */}
-      <div className="mb-6">
-        <BurnChart data={weeklyBurn} currency={project.currency} />
-      </div>
-
-      {/* Assigned people management */}
-      <AssignPeople
-        projectId={project.id}
-        assigned={assignedPeople}
-        available={availablePeople as any}
-      />
-
-      {/* Resources */}
-      <ProjectLinks
-        projectId={project.id}
-        projectName={project.name}
-        clientName={project.client}
-        initialLinks={(projectLinks ?? []) as ProjectLink[]}
-        isProducer={true}
-      />
-
-      {/* People breakdown */}
-      <div className="bg-white border border-neutral-200 rounded-[4px] mb-6">
-        <div className="px-4 py-3 border-b border-neutral-100">
-          <h2 className="text-sm font-semibold text-neutral-900">People Breakdown</h2>
-        </div>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Person</TableHead>
-              <TableHead className="text-right">Hours</TableHead>
-              <TableHead className="text-right">Internal Cost</TableHead>
-              <TableHead className="text-right">External Cost</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {personBreakdown.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={4} className="text-center text-neutral-500 py-6">
-                  No approved time entries yet
-                </TableCell>
-              </TableRow>
-            ) : (
-              personBreakdown.map(person => (
-                <TableRow key={person.name}>
-                  <TableCell className="font-medium text-neutral-900">{person.name}</TableCell>
-                  <TableCell className="text-right font-mono">{formatHours(person.hours)}</TableCell>
-                  <TableCell className="text-right font-mono">{formatCurrency(person.internal_cost, project.currency)}</TableCell>
-                  <TableCell className="text-right font-mono">{formatCurrency(person.external_cost, project.currency)}</TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
-
-      {/* Pending approvals */}
-      {approvalGroups.length > 0 && (
-        <div className="bg-white border border-neutral-200 rounded-[4px]">
-          <div className="px-4 py-3 border-b border-neutral-100 flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-neutral-900">Pending Approvals</h2>
-            <Badge variant="submitted">{approvalGroups.length} pending</Badge>
+              <p className="text-xs text-neutral-500 uppercase tracking-wider mb-1">Budget Remaining</p>
+              {project.budget_value ? (
+                <p className={`text-2xl font-mono font-semibold ${
+                  budgetPct !== null && budgetPct >= 100 ? 'text-red-600' :
+                  budgetPct !== null && budgetPct >= 80 ? 'text-amber-600' :
+                  'text-neutral-900'
+                }`}>
+                  {project.budget_type === 'hours'
+                    ? formatHours(budgetRemaining ?? 0)
+                    : formatCurrency(budgetRemaining ?? 0, project.currency)}
+                </p>
+              ) : (
+                <p className="text-lg text-neutral-400">No budget set</p>
+              )}
+            </div>
           </div>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Person</TableHead>
-                <TableHead>Week</TableHead>
-                <TableHead className="text-right">Hours</TableHead>
-                <TableHead>Submitted</TableHead>
-                <TableHead></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {approvalGroups.map(group => (
-                <TableRow key={group.key}>
-                  <TableCell className="font-medium text-neutral-900">{group.personName}</TableCell>
-                  <TableCell className="font-mono text-neutral-600">W{group.week} {group.year}</TableCell>
-                  <TableCell className="text-right font-mono">{formatHours(group.totalHours)}</TableCell>
-                  <TableCell className="text-neutral-500 text-xs">
-                    {group.submittedAt ? format(new Date(group.submittedAt), 'MMM d, yyyy') : '—'}
-                  </TableCell>
-                  <TableCell>
-                    <ApproveActions entryIds={group.entryIds} />
-                  </TableCell>
+
+          {/* Chart */}
+          <div className="mb-6">
+            <BurnChart data={weeklyBurn} currency={project.currency} />
+          </div>
+
+          {/* Assigned people */}
+          <AssignPeople
+            projectId={project.id}
+            assigned={assignedPeople}
+            available={availablePeople as any}
+          />
+
+          {/* Resources */}
+          <ProjectLinks
+            projectId={project.id}
+            projectName={project.name}
+            clientName={project.client}
+            initialLinks={(projectLinks ?? []) as ProjectLink[]}
+            isProducer={true}
+          />
+
+          {/* People breakdown */}
+          <div className="bg-white border border-neutral-200 rounded-[4px] mb-6">
+            <div className="px-4 py-3 border-b border-neutral-100">
+              <h2 className="text-sm font-semibold text-neutral-900">People Breakdown</h2>
+            </div>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Person</TableHead>
+                  <TableHead className="text-right">Hours</TableHead>
+                  <TableHead className="text-right">Internal Cost</TableHead>
+                  <TableHead className="text-right">External Cost</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+              </TableHeader>
+              <TableBody>
+                {personBreakdown.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={4} className="text-center text-neutral-500 py-6">
+                      No approved time entries yet
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  personBreakdown.map(person => (
+                    <TableRow key={person.name}>
+                      <TableCell className="font-medium text-neutral-900">{person.name}</TableCell>
+                      <TableCell className="text-right font-mono">{formatHours(person.hours)}</TableCell>
+                      <TableCell className="text-right font-mono">{formatCurrency(person.internal_cost, project.currency)}</TableCell>
+                      <TableCell className="text-right font-mono">{formatCurrency(person.external_cost, project.currency)}</TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+
+          {/* Pending approvals */}
+          {approvalGroups.length > 0 && (
+            <div className="bg-white border border-neutral-200 rounded-[4px]">
+              <div className="px-4 py-3 border-b border-neutral-100 flex items-center justify-between">
+                <h2 className="text-sm font-semibold text-neutral-900">Pending Approvals</h2>
+                <Badge variant="submitted">{approvalGroups.length} pending</Badge>
+              </div>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Person</TableHead>
+                    <TableHead>Week</TableHead>
+                    <TableHead className="text-right">Hours</TableHead>
+                    <TableHead>Submitted</TableHead>
+                    <TableHead></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {approvalGroups.map(group => (
+                    <TableRow key={group.key}>
+                      <TableCell className="font-medium text-neutral-900">{group.personName}</TableCell>
+                      <TableCell className="font-mono text-neutral-600">W{group.week} {group.year}</TableCell>
+                      <TableCell className="text-right font-mono">{formatHours(group.totalHours)}</TableCell>
+                      <TableCell className="text-neutral-500 text-xs">
+                        {group.submittedAt ? format(new Date(group.submittedAt), 'MMM d, yyyy') : '—'}
+                      </TableCell>
+                      <TableCell>
+                        <ApproveActions entryIds={group.entryIds} />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ── Financials tab ────────────────────────────────────────────────────── */}
+      {activeTab === 'financials' && (
+        <FinancialsTab
+          projectId={project.id}
+          currency={project.currency}
+          sowTotal={sowTotal}
+          labourRows={labourRows}
+          initialExpenses={(expensesData ?? []) as Expense[]}
+        />
       )}
     </div>
   )

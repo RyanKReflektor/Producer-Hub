@@ -37,6 +37,7 @@ export interface ProjectAssignment {
   id: string
   project_id: string
   person_id: string
+  estimated_hours: number | null
   internal_rate_override: number | null
   external_rate_override: number | null
   assigned_at: string
@@ -94,6 +95,28 @@ export interface ProjectLink {
   url: string
   producer_only: boolean
   added_by: string
+  added_at: string
+}
+
+export type ExpenseType =
+  | 'hosting'
+  | 'travel'
+  | 'accommodation'
+  | 'per_diem'
+  | 'freelancer_flat'
+  | 'software'
+  | 'purchase'
+  | 'other'
+
+export interface Expense {
+  id: string
+  project_id: string
+  expense_type: ExpenseType
+  label: string
+  amount: number
+  quantity: number
+  notes: string | null
+  added_by: string | null
   added_at: string
 }
 
