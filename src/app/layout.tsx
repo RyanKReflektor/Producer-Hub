@@ -5,7 +5,7 @@ import './globals.css'
 const spaceGrotesk = Space_Grotesk({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'Producer Hub',
+  title: 'Spectra',
   description: 'Time tracking and project management for production teams',
 }
 

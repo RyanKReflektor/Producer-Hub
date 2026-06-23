@@ -53,8 +53,9 @@ export function Sidebar({ profile, role }: SidebarProps) {
     <div className="flex flex-col h-full bg-[#0F0F0F] w-56 shrink-0">
       {/* Logo */}
       <div className="flex items-center gap-2.5 px-4 py-5 border-b border-neutral-800">
-        <div className="w-6 h-6 bg-[#3E0BE5] rounded-[4px] shrink-0" />
-        <span className="text-white font-semibold text-sm tracking-tight">Producer Hub</span>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo.png" alt="Spectra" className="w-6 h-6 shrink-0 rounded-[2px]" />
+        <span className="text-white font-semibold text-sm tracking-tight">Spectra</span>
       </div>
 
       {/* Nav */}

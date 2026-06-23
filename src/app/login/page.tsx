@@ -47,8 +47,9 @@ export default function LoginPage() {
       <div className="hidden lg:flex lg:w-1/2 bg-[#0F0F0F] flex-col justify-between p-12">
         <div>
           <div className="flex items-center gap-3 mb-16">
-            <div className="w-8 h-8 bg-amber-600 rounded-[4px]" />
-            <span className="text-white font-semibold text-xl tracking-tight">Producer Hub</span>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo.png" alt="Spectra" className="w-8 h-8 rounded-[2px]" />
+            <span className="text-white font-semibold text-xl tracking-tight">Spectra</span>
           </div>
           <h1 className="text-white text-4xl font-bold leading-tight mb-4">
             Time tracking for<br />production teams.
@@ -58,7 +59,7 @@ export default function LoginPage() {
           </p>
         </div>
         <div className="text-neutral-600 text-sm">
-          &copy; 2024 Producer Hub. All rights reserved.
+          &copy; 2024 Spectra. All rights reserved.
         </div>
       </div>
 
@@ -66,8 +67,9 @@ export default function LoginPage() {
       <div className="flex-1 flex items-center justify-center bg-white p-8">
         <div className="w-full max-w-sm">
           <div className="lg:hidden flex items-center gap-2 mb-8">
-            <div className="w-6 h-6 bg-amber-600 rounded-[4px]" />
-            <span className="font-semibold text-lg">Producer Hub</span>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo.png" alt="Spectra" className="w-6 h-6 rounded-[2px]" />
+            <span className="font-semibold text-lg">Spectra</span>
           </div>
 
           <h2 className="text-2xl font-bold text-neutral-900 mb-2">Sign in</h2>
