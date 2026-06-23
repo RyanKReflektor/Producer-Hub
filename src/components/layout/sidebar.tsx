@@ -33,7 +33,9 @@ const producerNav = [
 ]
 
 const contributorNav = [
+  { href: '/my-dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/timesheet', label: 'My Timesheet', icon: Clock },
+  { href: '/my-projects', label: 'My Projects', icon: FolderOpen },
 ]
 
 export function Sidebar({ profile, role }: SidebarProps) {

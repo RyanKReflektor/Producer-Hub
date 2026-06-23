@@ -92,6 +92,7 @@ export interface ProjectLink {
   tool: LinkTool
   label: string
   url: string
+  producer_only: boolean
   added_by: string
   added_at: string
 }

@@ -11,6 +11,7 @@ export async function addProjectLink(
   tool: LinkTool,
   label: string,
   url: string,
+  producerOnly = false,
 ): Promise<ProjectLink> {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -18,7 +19,7 @@ export async function addProjectLink(
 
   const { data, error } = await supabase
     .from('project_links')
-    .insert({ project_id: projectId, tool, label, url, added_by: user.id })
+    .insert({ project_id: projectId, tool, label, url, producer_only: producerOnly, added_by: user.id })
     .select()
     .single()
 

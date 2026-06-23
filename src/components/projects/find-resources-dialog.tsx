@@ -16,6 +16,7 @@ import type { ProjectLink } from '@/lib/types'
 import { ToolIcon, toolLabel } from './tool-icons'
 import { useTheme } from '@/components/layout/theme-context'
 import { cn } from '@/lib/utils'
+import { EyeOff, Eye } from 'lucide-react'
 
 interface FindResourcesDialogProps {
   open: boolean
@@ -27,7 +28,7 @@ interface FindResourcesDialogProps {
   onLinksAdded: (links: ProjectLink[]) => void
 }
 
-type SelectionMap = Map<string, { match: DiscoveryMatch; label: string; selected: boolean }>
+type SelectionMap = Map<string, { match: DiscoveryMatch; label: string; selected: boolean; producerOnly: boolean }>
 
 export function FindResourcesDialog({
   open,
@@ -74,7 +75,7 @@ export function FindResourcesDialog({
         const filtered = { ...r, matches: r.matches.filter(m => !existingUrls.has(m.url)) }
         setResult(filtered)
         const map: SelectionMap = new Map()
-        filtered.matches.forEach(m => map.set(m.id, { match: m, label: m.label, selected: false }))
+        filtered.matches.forEach(m => map.set(m.id, { match: m, label: m.label, selected: false, producerOnly: false }))
         setSelection(map)
         setStatus('done')
       })
@@ -102,6 +103,15 @@ export function FindResourcesDialog({
     })
   }
 
+  const toggleProducerOnly = (id: string) => {
+    setSelection(prev => {
+      const next = new Map(prev)
+      const item = next.get(id)
+      if (item) next.set(id, { ...item, producerOnly: !item.producerOnly })
+      return next
+    })
+  }
+
   const selectedItems = Array.from(selection.values()).filter(s => s.selected)
 
   async function handleSave() {
@@ -110,8 +120,8 @@ export function FindResourcesDialog({
     setSaveError(null)
     try {
       const added: ProjectLink[] = []
-      for (const { match, label } of selectedItems) {
-        const link = await addProjectLink(projectId, match.tool, label, match.url)
+      for (const { match, label, producerOnly } of selectedItems) {
+        const link = await addProjectLink(projectId, match.tool, label, match.url, producerOnly)
         added.push(link)
       }
       onLinksAdded(added)
@@ -211,6 +221,7 @@ export function FindResourcesDialog({
                         {items.map(match => {
                           const sel = selection.get(match.id)
                           const isSelected = sel?.selected ?? false
+                          const isProducerOnly = sel?.producerOnly ?? false
                           return (
                             <label
                               key={match.id}
@@ -238,6 +249,19 @@ export function FindResourcesDialog({
                                 />
                                 <p className="text-xs text-neutral-400 dark:text-neutral-500 truncate mt-0.5">{match.url}</p>
                               </div>
+                              <button
+                                type="button"
+                                onClick={e => { e.preventDefault(); e.stopPropagation(); toggleProducerOnly(match.id) }}
+                                title={isProducerOnly ? 'Hidden from contributors' : 'Visible to contributors'}
+                                className={cn(
+                                  'mt-0.5 shrink-0 p-0.5 rounded transition-colors',
+                                  isProducerOnly
+                                    ? 'text-amber-500 dark:text-amber-400'
+                                    : 'text-neutral-300 dark:text-neutral-600 hover:text-neutral-500 dark:hover:text-neutral-400'
+                                )}
+                              >
+                                {isProducerOnly ? <EyeOff size={13} /> : <Eye size={13} />}
+                              </button>
                             </label>
                           )
                         })}

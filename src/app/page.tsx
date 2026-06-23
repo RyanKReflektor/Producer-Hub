@@ -16,7 +16,7 @@ export default async function Home() {
     .single()
 
   if (profile?.role === 'contributor') {
-    redirect('/timesheet')
+    redirect('/my-dashboard')
   }
 
   redirect('/dashboard')

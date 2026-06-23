@@ -15,7 +15,7 @@ export default async function ProducerLayout({ children }: { children: React.Rea
     .single()
 
   if (!profile || profile.role !== 'producer') {
-    redirect('/timesheet')
+    redirect('/my-dashboard')
   }
 
   return <AppShell profile={profile}>{children}</AppShell>

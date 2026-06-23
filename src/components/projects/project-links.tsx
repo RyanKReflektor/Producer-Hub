@@ -8,7 +8,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { Plus, Sparkles, Pencil, Trash2, ExternalLink } from 'lucide-react'
+import { Plus, Sparkles, Pencil, Trash2, ExternalLink, EyeOff } from 'lucide-react'
 import {
   addProjectLink,
   updateProjectLink,
@@ -56,11 +56,12 @@ export function ProjectLinks({
     const tool = fd.get('tool') as LinkTool
     const label = (fd.get('label') as string).trim()
     const url = (fd.get('url') as string).trim()
+    const producerOnly = fd.get('producer_only') === 'on'
     if (!label || !url) return
     setFormError(null)
     startTransition(async () => {
       try {
-        const link = await addProjectLink(projectId, tool, label, url)
+        const link = await addProjectLink(projectId, tool, label, url, producerOnly)
         setLinks(prev => [...prev, link])
         setAddOpen(false)
       } catch (err) {
@@ -161,6 +162,11 @@ export function ProjectLinks({
                 >
                   <span className="truncate">{link.label}</span>
                   <ExternalLink size={11} className="shrink-0 text-neutral-400" />
+                  {link.producer_only && (
+                    <span title="Hidden from contributors">
+                      <EyeOff size={11} className="shrink-0 text-amber-500" />
+                    </span>
+                  )}
                 </a>
                 <p className="text-xs text-neutral-400 dark:text-[#555] truncate">{toolLabel(link.tool)}</p>
               </div>
@@ -191,6 +197,7 @@ export function ProjectLinks({
       <LinkFormDialog
         open={addOpen}
         title="Add Resource"
+        showProducerOnly
         onClose={() => setAddOpen(false)}
         onSubmit={handleAdd}
         isPending={isPending}
@@ -256,6 +263,7 @@ function LinkFormDialog({
   defaultTool = 'other',
   defaultLabel = '',
   defaultUrl = '',
+  showProducerOnly = false,
   onClose,
   onSubmit,
   isPending,
@@ -267,6 +275,7 @@ function LinkFormDialog({
   defaultTool?: LinkTool
   defaultLabel?: string
   defaultUrl?: string
+  showProducerOnly?: boolean
   onClose: () => void
   onSubmit: (e: React.FormEvent<HTMLFormElement>) => void
   isPending: boolean
@@ -317,6 +326,16 @@ function LinkFormDialog({
               className="w-full text-sm border border-neutral-200 rounded-[4px] px-3 py-2 focus:outline-none focus:ring-1 focus:ring-neutral-900"
             />
           </div>
+          {showProducerOnly && (
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                name="producer_only"
+                className="accent-[#3E0BE5]"
+              />
+              <span className="text-xs text-neutral-600">Hide from contributors (producer-only)</span>
+            </label>
+          )}
           {error && <p className="text-xs text-red-600">{error}</p>}
           <div className="flex justify-end gap-2 pt-1">
             <Button type="button" variant="outline" size="sm" onClick={onClose} disabled={isPending}>
