@@ -89,7 +89,7 @@ export async function discoverResources(
       ? searchSlack(projectName, clientName, process.env.SLACK_BOT_TOKEN, extraTerms)
       : Promise.reject(new Error('__UNCONFIGURED__')),
     process.env.NOTION_API_KEY
-      ? searchNotion(projectName, process.env.NOTION_API_KEY)
+      ? searchNotion(projectName, clientName, process.env.NOTION_API_KEY)
       : Promise.reject(new Error('__UNCONFIGURED__')),
     process.env.GOOGLE_SA_EMAIL && process.env.GOOGLE_SA_PRIVATE_KEY
       ? searchDrive(projectName, process.env.GOOGLE_SA_EMAIL, process.env.GOOGLE_SA_PRIVATE_KEY)
@@ -170,7 +170,8 @@ async function fetchAllSlackChannels(token: string): Promise<any[]> {
   return all
 }
 
-async function searchNotion(projectName: string, key: string): Promise<DiscoveryMatch[]> {
+async function searchNotion(projectName: string, clientName: string, key: string): Promise<DiscoveryMatch[]> {
+  const query = clientName ? `${projectName} ${clientName}` : projectName
   const res = await fetch('https://api.notion.com/v1/search', {
     method: 'POST',
     headers: {
@@ -178,7 +179,7 @@ async function searchNotion(projectName: string, key: string): Promise<Discovery
       'Notion-Version': '2022-06-28',
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ query: projectName, page_size: 5 }),
+    body: JSON.stringify({ query, page_size: 5 }),
   }).then(r => r.json())
 
   if (res.status === 401) throw new Error('Invalid Notion API key')
@@ -258,7 +259,7 @@ function buildTerms(projectName: string, clientName: string): string[] {
     terms.add(lower)
     terms.add(lower.replace(/\s+/g, '-'))
     terms.add(lower.replace(/\s+/g, '_'))
-    lower.split(/\s+/).filter(w => w.length >= 3).forEach(w => terms.add(w))
+    lower.split(/\s+/).filter(w => w.length >= 5).forEach(w => terms.add(w))
   }
   add(projectName)
   if (clientName) add(clientName)
