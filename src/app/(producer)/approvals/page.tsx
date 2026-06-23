@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic'
+
 import { createAdminClient } from '@/lib/supabase/admin'
 import { formatHours } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'

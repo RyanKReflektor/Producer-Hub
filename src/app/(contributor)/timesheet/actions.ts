@@ -73,4 +73,6 @@ export async function submitWeek(week: number, year: number) {
 
   if (error) throw new Error(error.message)
   revalidatePath('/timesheet')
+  revalidatePath('/approvals')
+  revalidatePath('/dashboard')
 }
