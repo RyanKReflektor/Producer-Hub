@@ -65,6 +65,18 @@ export default async function DashboardPage() {
     .select('id, person_id, project_id, hours, week_number, year, status')
     .in('status', ['submitted', 'approved'])
 
+  // Get expenses for budget calc
+  const { data: allExpenses } = await supabase
+    .from('expenses')
+    .select('project_id, amount, quantity')
+
+  // Sum expenses per project
+  const expensesByProject = new Map<string, number>()
+  for (const exp of allExpenses || []) {
+    const total = Number(exp.amount) * Number(exp.quantity)
+    expensesByProject.set(exp.project_id, (expensesByProject.get(exp.project_id) ?? 0) + total)
+  }
+
   // Fetch rates and overrides separately
   const entryPersonIds = Array.from(new Set([
     ...(weekEntries || []).map(e => e.person_id),
@@ -103,6 +115,9 @@ export default async function DashboardPage() {
     const totalCost = allProjectEntries.reduce((sum, e) =>
       sum + (Number(e.hours) * effectiveRate(e.person_id, e.project_id)), 0)
 
+    const totalExpenses = expensesByProject.get(project.id) ?? 0
+    const actualCost = totalCost + totalExpenses
+
     let budgetRemaining: number | null = null
     let budgetPct: number | null = null
     if (project.budget_value) {
@@ -110,8 +125,8 @@ export default async function DashboardPage() {
         budgetRemaining = project.budget_value - totalHours
         budgetPct = (totalHours / project.budget_value) * 100
       } else if (project.budget_type === 'dollars') {
-        budgetRemaining = project.budget_value - totalCost
-        budgetPct = (totalCost / project.budget_value) * 100
+        budgetRemaining = project.budget_value - actualCost
+        budgetPct = (actualCost / project.budget_value) * 100
       }
     }
 
@@ -120,7 +135,7 @@ export default async function DashboardPage() {
       thisWeekHours,
       thisWeekCost,
       totalHours,
-      totalCost,
+      totalCost: actualCost,
       budgetRemaining,
       budgetPct,
     }
