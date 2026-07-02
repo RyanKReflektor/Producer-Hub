@@ -29,6 +29,7 @@ const producerNav = [
   { href: '/people', label: 'People', icon: Users },
   { href: '/approvals', label: 'Approvals', icon: CheckSquare },
   { href: '/resourcing', label: 'Resourcing', icon: BarChart2 },
+  { href: '/time', label: 'Timesheet', icon: Clock },
   { href: '/timeline', label: 'Timeline', icon: Calendar },
 ]
 

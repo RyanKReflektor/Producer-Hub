@@ -3,7 +3,7 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
 import {
   ChevronLeft, ChevronRight, ChevronDown, ChevronsDownUp, Plus, CalendarOff,
-  Download, Trash2, UserPlus, Flag, Pencil, Search,
+  Download, Trash2, UserPlus, Flag, Pencil, Search, CalendarClock,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -12,7 +12,7 @@ import {
   createAllocation, updateAllocation, deleteAllocation,
   createTimeOff, deleteTimeOff,
   createResourcePerson, updateResourcePerson, deleteResourcePerson,
-  createMilestone, deleteMilestone,
+  createMilestone, deleteMilestone, shiftTimeline,
   type OwnerRef,
 } from '@/app/(producer)/resourcing/actions'
 import type {
@@ -138,6 +138,7 @@ export function ResourcingTimeline({
   const [timeOffOpen, setTimeOffOpen] = useState(false)
   const [personDialog, setPersonDialog] = useState<{ open: boolean; edit: ResourcePerson | null }>({ open: false, edit: null })
   const [milestoneOpen, setMilestoneOpen] = useState(false)
+  const [shiftOpen, setShiftOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -486,6 +487,22 @@ export function ResourcingTimeline({
     setMilestones(prev => prev.filter(m => m.id !== id))
   }
 
+  async function handleShiftSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    const fd = new FormData(e.currentTarget)
+    const projectId = (fd.get('project_id') as string) || null
+    const from = fd.get('from') as string
+    const to = fd.get('to') as string
+    if (from === to) { setError('Pick two different dates to shift by.'); return }
+    setSaving(true); setError(null)
+    try {
+      const updates = await shiftTimeline(projectId, from, to)
+      const map = new Map(updates.map(u => [u.id, u]))
+      setAllocations(prev => prev.map(a => map.has(a.id) ? { ...a, start_date: map.get(a.id)!.start_date, end_date: map.get(a.id)!.end_date } : a))
+      setShiftOpen(false)
+    } catch (err) { setError(err instanceof Error ? err.message : 'Something went wrong.') } finally { setSaving(false) }
+  }
+
   function exportCSV() {
     const rowsCsv: string[][] = [['Person', 'Project', 'Start', 'End', 'Hours/Day', 'Total Hours', 'Note']]
     const nameFor = (a: ResourceAllocation) =>
@@ -571,6 +588,7 @@ export function ResourcingTimeline({
           <Button variant="outline" size="sm" className="h-8 text-xs gap-1" onClick={exportCSV}><Download size={13} /> CSV</Button>
           <Button variant="outline" size="sm" className="h-8 text-xs gap-1" onClick={() => { setError(null); setPersonDialog({ open: true, edit: null }) }}><UserPlus size={13} /> Person</Button>
           <Button variant="outline" size="sm" className="h-8 text-xs gap-1" onClick={() => { setError(null); setMilestoneOpen(true) }}><Flag size={13} /> Milestone</Button>
+          <Button variant="outline" size="sm" className="h-8 text-xs gap-1" onClick={() => { setError(null); setShiftOpen(true) }}><CalendarClock size={13} /> Shift</Button>
           <Button variant="outline" size="sm" className="h-8 text-xs gap-1" onClick={() => { setError(null); setTimeOffOpen(true) }}><CalendarOff size={13} /> Time Off</Button>
           <Button size="sm" className="h-8 text-xs gap-1" onClick={() => { setError(null); setAllocDialog({ open: true, edit: null }) }}><Plus size={14} /> Assignment</Button>
         </div>
@@ -896,6 +914,31 @@ export function ResourcingTimeline({
             <div className="flex justify-end gap-2 pt-1">
               <Button type="button" variant="outline" size="sm" onClick={() => setMilestoneOpen(false)}>Cancel</Button>
               <Button type="submit" size="sm" disabled={saving}>{saving ? 'Saving…' : 'Add'}</Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Shift timeline dialog */}
+      <Dialog open={shiftOpen} onOpenChange={v => { if (!v) setShiftOpen(false) }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Shift timeline</DialogTitle></DialogHeader>
+          <p className="text-sm text-neutral-500 -mt-1">Project delayed? Move all assignments starting on or after a date forward (or back) in the timeline.</p>
+          <form onSubmit={handleShiftSubmit} className="space-y-3 pt-2">
+            <Field label="Scope">
+              <select name="project_id" defaultValue="" className={selectCls}>
+                <option value="">All projects</option>
+                {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Shift assignments from"><input name="from" type="date" defaultValue={toISO(today)} required className={inputCls} /></Field>
+              <Field label="to instead start on"><input name="to" type="date" defaultValue={toISO(addDays(today, 7))} required className={inputCls} /></Field>
+            </div>
+            {error && <p className="text-xs text-red-600">{error}</p>}
+            <div className="flex justify-end gap-2 pt-1">
+              <Button type="button" variant="outline" size="sm" onClick={() => setShiftOpen(false)}>Cancel</Button>
+              <Button type="submit" size="sm" disabled={saving}>{saving ? 'Shifting…' : 'Shift timeline'}</Button>
             </div>
           </form>
         </DialogContent>

@@ -7,9 +7,10 @@ import { useRouter } from 'next/navigation'
 interface WeekNavProps {
   monday: Date
   currentMonday: Date
+  basePath?: string
 }
 
-export function WeekNav({ monday, currentMonday }: WeekNavProps) {
+export function WeekNav({ monday, currentMonday, basePath = '/timesheet' }: WeekNavProps) {
   const router = useRouter()
 
   const mondayTime = monday instanceof Date ? monday.getTime() : new Date(monday).getTime()
@@ -25,7 +26,7 @@ export function WeekNav({ monday, currentMonday }: WeekNavProps) {
     const newMonday = new Date(mondayDate)
     newMonday.setDate(mondayDate.getDate() + (direction === 'prev' ? -7 : 7))
     const dateStr = newMonday.toISOString().split('T')[0]
-    router.push(`/timesheet?week=${dateStr}`)
+    router.push(`${basePath}?week=${dateStr}`)
   }
 
   return (
@@ -55,7 +56,7 @@ export function WeekNav({ monday, currentMonday }: WeekNavProps) {
 
       {!isCurrentWeek && (
         <button
-          onClick={() => router.push('/timesheet')}
+          onClick={() => router.push(basePath)}
           className="text-xs text-[#3E0BE5] hover:text-purple-700 font-medium ml-1"
         >
           Today

@@ -117,6 +117,45 @@ export async function deleteTimeOff(id: string): Promise<void> {
   revalidatePath('/resourcing')
 }
 
+// ── Shift timeline ───────────────────────────────────────────────────────────
+// Move every allocation that starts on/after `fromDate` by (toDate - fromDate),
+// optionally limited to one project. Returns the updated rows so the client can
+// patch its state without a full reload.
+export async function shiftTimeline(
+  projectId: string | null,
+  fromDate: string,
+  toDate: string,
+): Promise<{ id: string; start_date: string; end_date: string }[]> {
+  const { supabase } = await requireProducer()
+  const from = new Date(`${fromDate}T00:00:00`)
+  const to = new Date(`${toDate}T00:00:00`)
+  const delta = Math.round((to.getTime() - from.getTime()) / 86400000)
+  if (delta === 0) return []
+
+  let q = supabase.from('resource_allocations').select('id, start_date, end_date').gte('start_date', fromDate)
+  if (projectId) q = q.eq('project_id', projectId)
+  const { data, error } = await q
+  if (error) throw new Error(error.message)
+
+  const addDaysISO = (iso: string, n: number) => {
+    const d = new Date(`${iso}T00:00:00`); d.setDate(d.getDate() + n)
+    return d.toISOString().slice(0, 10)
+  }
+  const updated: { id: string; start_date: string; end_date: string }[] = []
+  for (const a of data ?? []) {
+    const start_date = addDaysISO(a.start_date, delta)
+    const end_date = addDaysISO(a.end_date, delta)
+    const { error: e2 } = await supabase
+      .from('resource_allocations')
+      .update({ start_date, end_date, updated_at: new Date().toISOString() })
+      .eq('id', a.id)
+    if (e2) throw new Error(e2.message)
+    updated.push({ id: a.id, start_date, end_date })
+  }
+  revalidatePath('/resourcing')
+  return updated
+}
+
 // ── Resource people (placeholders / vendors) ─────────────────────────────────
 export async function createResourcePerson(
   name: string,
