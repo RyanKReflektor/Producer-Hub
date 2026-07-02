@@ -1,24 +1,18 @@
 'use client'
 
 import { useState, useMemo, useRef, useEffect } from 'react'
-import { ChevronLeft, ChevronRight, Plus, CalendarOff, Download, Trash2, UserPlus, Flag } from 'lucide-react'
+import {
+  ChevronLeft, ChevronRight, ChevronDown, ChevronsDownUp, Plus, CalendarOff,
+  Download, Trash2, UserPlus, Flag, Pencil, Search,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { getISOWeek } from '@/lib/utils'
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
-import {
-  createAllocation,
-  updateAllocation,
-  deleteAllocation,
-  createTimeOff,
-  deleteTimeOff,
-  createResourcePerson,
-  deleteResourcePerson,
-  createMilestone,
-  deleteMilestone,
+  createAllocation, updateAllocation, deleteAllocation,
+  createTimeOff, deleteTimeOff,
+  createResourcePerson, updateResourcePerson, deleteResourcePerson,
+  createMilestone, deleteMilestone,
   type OwnerRef,
 } from '@/app/(producer)/resourcing/actions'
 import type {
@@ -27,17 +21,14 @@ import type {
 } from '@/lib/types'
 
 // ── Layout constants ────────────────────────────────────────────────────────
-const LABEL_W = 224
+const LABEL_W = 236
 const BAR_H = 24
 const LANE_GAP = 4
-const TOTALS_H = 22
 const ROW_PAD = 10
-const MILESTONE_H = 30
+const MILESTONE_H = 28
 const HANDLE_W = 7
 const DRAG_THRESHOLD = 3
 
-// `minDayW` is a floor for small screens; the actual day width scales up to
-// fill the available container width (see DAY_W below).
 const ZOOMS = [
   { label: '2 weeks', days: 14, minDayW: 40 },
   { label: 'Month', days: 35, minDayW: 20 },
@@ -77,17 +68,19 @@ function workingDaysBetween(startISO: string, endISO: string): number {
   }
   return n
 }
+function fmtH(n: number): string { return Number.isInteger(n) ? String(n) : n.toFixed(1) }
 
 interface Row {
   key: string
   groupKind: 'person' | 'project'
-  id: string             // person id (profile/resource) or project id
-  ownerKey?: string      // person rows only: 'p:id' / 'r:id'
+  id: string
+  ownerKey?: string
   name: string
   subtitle: string
   color: string
-  capacity: number       // hours/week ceiling for over-allocation; Infinity for projects
+  capacity: number       // hours/week; Infinity for projects
   deletable: boolean
+  editable: boolean       // resource people can be edited/renamed
 }
 
 function ownerKey(a: { person_id: string | null; resource_person_id: string | null }): string {
@@ -98,14 +91,10 @@ function parseOwner(key: string): OwnerRef {
   return kind === 'p' ? { personId: id, resourcePersonId: null } : { personId: null, resourcePersonId: id }
 }
 
-// Live drag bookkeeping (held in a ref so window listeners see fresh values).
-// `cur*` fields are updated on every move so pointer-up reads the final value
-// without hitting a stale React state closure.
 type Drag =
   | { mode: 'move' | 'left' | 'right'; id: string; startX: number; origStart: string; origEnd: string; moved: boolean; curStart?: string; curEnd?: string }
   | { mode: 'create'; rowKey: string; trackLeft: number; startDay: number; moved: boolean; curStartDay?: number; curEndDay?: number }
 
-// Preview positions rendered mid-drag
 interface Preview {
   id?: string
   start_date?: string
@@ -137,11 +126,13 @@ export function ResourcingTimeline({
   const [milestones, setMilestones] = useState<Milestone[]>(initialMilestones)
   const [nameFilter, setNameFilter] = useState('')
   const [typeFilter, setTypeFilter] = useState<'all' | 'employee' | 'freelancer' | 'placeholder' | 'vendor'>('all')
+  const [sortBy, setSortBy] = useState<'name' | 'role'>('name')
   const [groupBy, setGroupBy] = useState<'people' | 'projects'>('people')
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
 
   const [allocDialog, setAllocDialog] = useState<{ open: boolean; edit: ResourceAllocation | null; prefill?: { owner?: string; projectId?: string; start: string; end: string } }>({ open: false, edit: null })
   const [timeOffOpen, setTimeOffOpen] = useState(false)
-  const [personOpen, setPersonOpen] = useState(false)
+  const [personDialog, setPersonDialog] = useState<{ open: boolean; edit: ResourcePerson | null }>({ open: false, edit: null })
   const [milestoneOpen, setMilestoneOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -149,15 +140,12 @@ export function ResourcingTimeline({
   const dragRef = useRef<Drag | null>(null)
   const [preview, setPreview] = useState<Preview | null>(null)
 
-  // Measure the timeline container so the day width can scale to fill it.
   const containerRef = useRef<HTMLDivElement>(null)
   const [containerW, setContainerW] = useState(1200)
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
-    const ro = new ResizeObserver(entries => {
-      for (const e of entries) setContainerW(e.contentRect.width)
-    })
+    const ro = new ResizeObserver(entries => { for (const e of entries) setContainerW(e.contentRect.width) })
     ro.observe(el)
     setContainerW(el.clientWidth)
     return () => ro.disconnect()
@@ -165,7 +153,6 @@ export function ResourcingTimeline({
 
   const zoom = ZOOMS[zoomIdx]
   const totalDays = zoom.days
-  // Fill the available width; fall back to the per-zoom minimum on small screens.
   const availableW = Math.max(280, containerW - LABEL_W)
   const DAY_W = Math.max(zoom.minDayW, availableW / totalDays)
   const COL_W = DAY_W * 7
@@ -178,7 +165,6 @@ export function ResourcingTimeline({
     return e?.project.color || PALETTE[(e?.idx ?? 0) % PALETTE.length]
   }
 
-  // Owner-key → display name + colour, for bars shown in project view.
   const personDisplay = useMemo(() => {
     const m = new Map<string, { name: string; color: string }>()
     people.forEach((p, i) => m.set(`p:${p.id}`, { name: p.name, color: p.color || PALETTE[i % PALETTE.length] }))
@@ -188,49 +174,69 @@ export function ResourcingTimeline({
 
   const rows: Row[] = useMemo(() => {
     const q = nameFilter.toLowerCase()
+    let list: Row[]
     if (groupBy === 'projects') {
-      return projects
-        .map<Row>(p => ({
-          key: `proj:${p.id}`, groupKind: 'project', id: p.id,
-          name: p.name, subtitle: p.client, color: projColor(p.id),
-          capacity: Infinity, deletable: false,
-        }))
-        .filter(row => !q || row.name.toLowerCase().includes(q))
-    }
-    const profileRows: Row[] = people.map((p, i) => ({
-      key: `p:${p.id}`, groupKind: 'person', id: p.id, ownerKey: `p:${p.id}`, name: p.name,
-      subtitle: p.person_type ?? '—', color: p.color || PALETTE[i % PALETTE.length],
-      capacity: Number(p.daily_hours ?? 8) * 5, deletable: false,
-    }))
-    const resourceRows: Row[] = resourcePeople.map((r, i) => ({
-      key: `r:${r.id}`, groupKind: 'person', id: r.id, ownerKey: `r:${r.id}`, name: r.name,
-      subtitle: r.kind === 'vendor' ? 'Vendor' : 'Placeholder',
-      color: r.color || PALETTE[(people.length + i) % PALETTE.length],
-      capacity: Number(r.daily_hours ?? 8) * 5, deletable: true,
-    }))
-    return [...profileRows, ...resourceRows].filter(row => {
-      if (typeFilter !== 'all') {
-        if (typeFilter === 'placeholder' || typeFilter === 'vendor') {
-          const rp = resourcePeople.find(r => r.id === row.id)
-          if (!rp || rp.kind !== typeFilter) return false
-        } else {
-          const pr = people.find(p => p.id === row.id)
-          if (!pr || pr.person_type !== typeFilter) return false
+      list = projects.map<Row>(p => ({
+        key: `proj:${p.id}`, groupKind: 'project', id: p.id,
+        name: p.name, subtitle: p.client, color: projColor(p.id),
+        capacity: Infinity, deletable: false, editable: false,
+      })).filter(row => {
+        if (!q) return true
+        return row.name.toLowerCase().includes(q) || row.subtitle.toLowerCase().includes(q)
+      })
+    } else {
+      const profileRows: Row[] = people.map((p, i) => ({
+        key: `p:${p.id}`, groupKind: 'person', id: p.id, ownerKey: `p:${p.id}`, name: p.name,
+        subtitle: p.title || (p.person_type ?? '—'), color: p.color || PALETTE[i % PALETTE.length],
+        capacity: Number(p.daily_hours ?? 8) * 5, deletable: false, editable: false,
+      }))
+      const resourceRows: Row[] = resourcePeople.map((r, i) => ({
+        key: `r:${r.id}`, groupKind: 'person', id: r.id, ownerKey: `r:${r.id}`, name: r.name,
+        subtitle: r.title || (r.kind === 'vendor' ? 'Vendor' : 'Placeholder'),
+        color: r.color || PALETTE[(people.length + i) % PALETTE.length],
+        capacity: Number(r.daily_hours ?? 8) * 5, deletable: true, editable: true,
+      }))
+      list = [...profileRows, ...resourceRows].filter(row => {
+        if (typeFilter !== 'all') {
+          if (typeFilter === 'placeholder' || typeFilter === 'vendor') {
+            const rp = resourcePeople.find(r => r.id === row.id)
+            if (!rp || rp.kind !== typeFilter) return false
+          } else {
+            const pr = people.find(p => p.id === row.id)
+            if (!pr || pr.person_type !== typeFilter) return false
+          }
         }
-      }
-      if (q && !row.name.toLowerCase().includes(q)) return false
-      return true
-    })
+        if (q && !(row.name.toLowerCase().includes(q) || row.subtitle.toLowerCase().includes(q))) return false
+        return true
+      })
+    }
+    return list.sort((a, b) =>
+      sortBy === 'role'
+        ? a.subtitle.localeCompare(b.subtitle) || a.name.localeCompare(b.name)
+        : a.name.localeCompare(b.name))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [people, resourcePeople, projects, nameFilter, typeFilter, groupBy])
+  }, [people, resourcePeople, projects, nameFilter, typeFilter, groupBy, sortBy])
 
   const rangeStart = useMemo(() => mondayOf(weekStart), [weekStart])
   const weeks = useMemo(() => Array.from({ length: totalDays / 7 }, (_, i) => addDays(rangeStart, i * 7)), [rangeStart, totalDays])
   const days = useMemo(() => Array.from({ length: totalDays }, (_, i) => addDays(rangeStart, i)), [rangeStart, totalDays])
   const rangeEnd = addDays(rangeStart, totalDays - 1)
   const todayMon = mondayOf(today).getTime()
+  const todayISO = toISO(today)
 
-  // Weekend stripes: transparent for Mon–Fri, subtle shade for Sat/Sun of each week
+  // Contiguous month spans for the header band
+  const monthGroups = useMemo(() => {
+    const groups: { key: string; label: string; startDay: number; len: number; yr: number }[] = []
+    days.forEach((d, i) => {
+      const label = d.toLocaleDateString('en-CA', { month: 'short' })
+      const yr = d.getFullYear()
+      const last = groups[groups.length - 1]
+      if (last && last.label === label && last.yr === yr) last.len++
+      else groups.push({ key: `${label}-${yr}-${i}`, label, startDay: i, len: 1, yr })
+    })
+    return groups
+  }, [days])
+
   const weekendBg = `repeating-linear-gradient(90deg, transparent 0px, transparent ${5 * DAY_W}px, rgba(15,23,42,0.045) ${5 * DAY_W}px, rgba(15,23,42,0.045) ${7 * DAY_W}px)`
 
   function allocInRow(a: ResourceAllocation, row: Row) {
@@ -243,7 +249,7 @@ export function ResourcingTimeline({
       .sort((a, b) => a.start_date.localeCompare(b.start_date))
   }
   function rowTimeOff(row: Row) {
-    if (row.groupKind === 'project') return []  // time off is per person, not per project
+    if (row.groupKind === 'project') return []
     return timeOff
       .filter(t => ownerKey(t) === row.ownerKey)
       .filter(t => parseISO(t.end_date) >= rangeStart && parseISO(t.start_date) <= rangeEnd)
@@ -280,12 +286,46 @@ export function ResourcingTimeline({
     })
   }
 
+  // Working days (Mon–Fri) in a week that are covered by the row's time off
+  function weekOffDays(row: Row, wkMonday: Date): number {
+    if (row.groupKind === 'project' || !row.ownerKey) return 0
+    const tos = timeOff.filter(t => ownerKey(t) === row.ownerKey)
+    let off = 0
+    for (let k = 0; k < 5; k++) {
+      const iso = toISO(addDays(wkMonday, k))
+      if (tos.some(t => iso >= t.start_date && iso <= t.end_date)) off++
+    }
+    return off
+  }
+
+  // Availability summary block for a week
+  function summaryFor(row: Row, allocated: number, wkMonday: Date): { label: string; cls: string } | null {
+    if (row.groupKind === 'project') {
+      return allocated > 0 ? { label: `${fmtH(allocated)}h`, cls: 'bg-blue-100 text-blue-700' } : null
+    }
+    const dailyH = row.capacity / 5
+    const off = weekOffDays(row, wkMonday)
+    const effCap = dailyH * (5 - off)
+    if (off >= 5 || effCap <= 0) return { label: 'Off', cls: 'bg-neutral-700 text-white' }
+    if (allocated > effCap + 0.001) return { label: `${fmtH(allocated - effCap)}h over`, cls: 'bg-red-500 text-white' }
+    if (Math.abs(allocated - effCap) < 0.001) return { label: 'Full', cls: 'bg-emerald-600 text-white' }
+    const rem = effCap - allocated
+    return { label: `${fmtH(rem)}h open`, cls: allocated === 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-emerald-100 text-emerald-800' }
+  }
+
   function barGeometry(startStr: string, endStr: string) {
     const startDay = Math.max(0, daysBetween(rangeStart, parseISO(startStr)))
     const endDay = Math.min(totalDays - 1, daysBetween(rangeStart, parseISO(endStr)))
     const left = startDay * DAY_W
     const width = Math.max(DAY_W, (endDay - startDay + 1) * DAY_W)
     return { left, width }
+  }
+
+  function toggleCollapse(key: string) {
+    setCollapsed(prev => { const n = new Set(prev); if (n.has(key)) n.delete(key); else n.add(key); return n })
+  }
+  function collapseAll() {
+    setCollapsed(prev => prev.size >= rows.length ? new Set() : new Set(rows.map(r => r.key)))
   }
 
   // ── Drag interactions ────────────────────────────────────────────────────
@@ -308,15 +348,12 @@ export function ResourcingTimeline({
       const deltaDays = Math.round((ev.clientX - d.startX) / DAY_W)
       if (Math.abs(ev.clientX - d.startX) > DRAG_THRESHOLD) d.moved = true
       if (d.mode === 'move') {
-        d.curStart = addISO(d.origStart, deltaDays)
-        d.curEnd = addISO(d.origEnd, deltaDays)
+        d.curStart = addISO(d.origStart, deltaDays); d.curEnd = addISO(d.origEnd, deltaDays)
       } else if (d.mode === 'left') {
-        let ns = addISO(d.origStart, deltaDays)
-        if (ns > d.origEnd) ns = d.origEnd
+        let ns = addISO(d.origStart, deltaDays); if (ns > d.origEnd) ns = d.origEnd
         d.curStart = ns; d.curEnd = d.origEnd
       } else {
-        let ne = addISO(d.origEnd, deltaDays)
-        if (ne < d.origStart) ne = d.origStart
+        let ne = addISO(d.origEnd, deltaDays); if (ne < d.origStart) ne = d.origStart
         d.curStart = d.origStart; d.curEnd = ne
       }
       setPreview({ id: d.id, start_date: d.curStart, end_date: d.curEnd })
@@ -346,10 +383,7 @@ export function ResourcingTimeline({
 
       const alloc = allocations.find(a => a.id === d.id)
       if (!alloc) return
-      if (!d.moved) {
-        setAllocDialog({ open: true, edit: alloc }); setError(null)
-        return
-      }
+      if (!d.moved) { setAllocDialog({ open: true, edit: alloc }); setError(null); return }
       const start = d.curStart ?? alloc.start_date
       const end = d.curEnd ?? alloc.end_date
       if (start === alloc.start_date && end === alloc.end_date) return
@@ -363,11 +397,7 @@ export function ResourcingTimeline({
   async function commitDates(alloc: ResourceAllocation, start: string, end: string) {
     setAllocations(prev => prev.map(a => a.id === alloc.id ? { ...a, start_date: start, end_date: end } : a))
     try {
-      await updateAllocation(
-        alloc.id,
-        { personId: alloc.person_id, resourcePersonId: alloc.resource_person_id },
-        alloc.project_id, start, end, alloc.hours_per_day, alloc.note ?? '',
-      )
+      await updateAllocation(alloc.id, { personId: alloc.person_id, resourcePersonId: alloc.resource_person_id }, alloc.project_id, start, end, alloc.hours_per_day, alloc.note ?? '')
     } catch {
       setAllocations(prev => prev.map(a => a.id === alloc.id ? alloc : a))
     }
@@ -396,9 +426,7 @@ export function ResourcingTimeline({
         setAllocations(prev => [...prev, created])
       }
       setAllocDialog({ open: false, edit: null })
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong.')
-    } finally { setSaving(false) }
+    } catch (err) { setError(err instanceof Error ? err.message : 'Something went wrong.') } finally { setSaving(false) }
   }
 
   async function handleDeleteAlloc(id: string) {
@@ -421,9 +449,7 @@ export function ResourcingTimeline({
       const created = await createTimeOff(owner, startDate, endDate, type, note)
       setTimeOff(prev => [...prev, created])
       setTimeOffOpen(false)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong.')
-    } finally { setSaving(false) }
+    } catch (err) { setError(err instanceof Error ? err.message : 'Something went wrong.') } finally { setSaving(false) }
   }
 
   async function handleDeleteTimeOff(id: string) {
@@ -434,14 +460,23 @@ export function ResourcingTimeline({
   async function handlePersonSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     const fd = new FormData(e.currentTarget)
+    const name = fd.get('name') as string
+    const kind = fd.get('kind') as ResourcePersonKind
+    const title = (fd.get('title') as string) ?? ''
+    const color = fd.get('color') as string
+    const dailyHours = Number(fd.get('daily_hours'))
     setSaving(true); setError(null)
     try {
-      const created = await createResourcePerson(fd.get('name') as string, fd.get('kind') as ResourcePersonKind, fd.get('color') as string, Number(fd.get('daily_hours')))
-      setResourcePeople(prev => [...prev, created])
-      setPersonOpen(false)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong.')
-    } finally { setSaving(false) }
+      if (personDialog.edit) {
+        const id = personDialog.edit.id
+        await updateResourcePerson(id, name, kind, title, color, dailyHours)
+        setResourcePeople(prev => prev.map(r => r.id === id ? { ...r, name, kind, title: title || null, color: color || null, daily_hours: dailyHours } : r))
+      } else {
+        const created = await createResourcePerson(name, kind, title, color, dailyHours)
+        setResourcePeople(prev => [...prev, created])
+      }
+      setPersonDialog({ open: false, edit: null })
+    } catch (err) { setError(err instanceof Error ? err.message : 'Something went wrong.') } finally { setSaving(false) }
   }
 
   async function handleDeletePerson(id: string) {
@@ -449,6 +484,7 @@ export function ResourcingTimeline({
     setResourcePeople(prev => prev.filter(r => r.id !== id))
     setAllocations(prev => prev.filter(a => a.resource_person_id !== id))
     setTimeOff(prev => prev.filter(t => t.resource_person_id !== id))
+    setPersonDialog({ open: false, edit: null })
   }
 
   async function handleMilestoneSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -459,9 +495,7 @@ export function ResourcingTimeline({
       const created = await createMilestone(fd.get('project_id') as string, fd.get('date') as string, fd.get('name') as string)
       setMilestones(prev => [...prev, created])
       setMilestoneOpen(false)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong.')
-    } finally { setSaving(false) }
+    } catch (err) { setError(err instanceof Error ? err.message : 'Something went wrong.') } finally { setSaving(false) }
   }
 
   async function handleDeleteMilestone(id: string) {
@@ -481,8 +515,7 @@ export function ResourcingTimeline({
     const csv = rowsCsv.map(r => r.map(c => `"${c.replace(/"/g, '""')}"`).join(',')).join('\n')
     const blob = new Blob([csv], { type: 'text/csv' })
     const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url; link.download = 'resourcing.csv'; link.click()
+    const link = document.createElement('a'); link.href = url; link.download = 'resourcing.csv'; link.click()
     URL.revokeObjectURL(url)
   }
 
@@ -490,7 +523,6 @@ export function ResourcingTimeline({
     .map(m => ({ m, day: daysBetween(rangeStart, parseISO(m.date)) }))
     .filter(({ day }) => day >= 0 && day < totalDays)
 
-  const rangeLabel = `${rangeStart.toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })} – ${rangeEnd.toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' })}`
   const stepDays = Math.max(7, Math.floor(totalDays / 7 / 2) * 7)
 
   const ownerOptions = (
@@ -506,80 +538,113 @@ export function ResourcingTimeline({
     </>
   )
 
+  const tabCls = (active: boolean) =>
+    `px-1 pb-1 text-sm font-medium border-b-2 transition-colors ${active ? 'border-[#3E0BE5] text-[#3E0BE5]' : 'border-transparent text-neutral-500 hover:text-neutral-800'}`
+
   return (
     <div>
-      {/* Controls */}
-      <div className="flex flex-wrap items-center gap-2 mb-4">
-        <div className="flex items-center gap-1">
-          <Button variant="outline" size="sm" className="h-8 w-8 p-0" onClick={() => setWeekStart(mondayOf(addDays(rangeStart, -stepDays)))}><ChevronLeft size={15} /></Button>
-          <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => setWeekStart(mondayOf(new Date()))}>Today</Button>
-          <Button variant="outline" size="sm" className="h-8 w-8 p-0" onClick={() => setWeekStart(mondayOf(addDays(rangeStart, stepDays)))}><ChevronRight size={15} /></Button>
+      {/* Controls — left: views + collapse; right: search/sort/zoom/nav + actions */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-3">
+        <div className="flex items-center gap-3">
+          <button type="button" className={tabCls(groupBy === 'people')} onClick={() => setGroupBy('people')}>Team</button>
+          <button type="button" className={tabCls(groupBy === 'projects')} onClick={() => setGroupBy('projects')}>Projects</button>
+          <button type="button" onClick={collapseAll} title="Collapse / expand all"
+            className="ml-1 h-8 w-8 flex items-center justify-center border border-neutral-200 rounded-[4px] text-neutral-500 hover:bg-neutral-50">
+            <ChevronsDownUp size={15} />
+          </button>
         </div>
-        <select value={zoomIdx} onChange={e => setZoomIdx(Number(e.target.value))}
-          className="h-8 text-sm border border-neutral-200 rounded-[4px] px-2 focus:outline-none focus:ring-1 focus:ring-neutral-900 bg-white">
-          {ZOOMS.map((z, i) => <option key={z.label} value={i}>{z.label}</option>)}
-        </select>
-        {/* Group by: view rows as people or as projects */}
-        <div className="flex items-center border border-neutral-200 rounded-[4px] overflow-hidden h-8">
-          <button type="button" onClick={() => setGroupBy('people')}
-            className={`px-3 h-full text-xs font-medium ${groupBy === 'people' ? 'bg-neutral-900 text-white' : 'bg-white text-neutral-600 hover:bg-neutral-50'}`}>People</button>
-          <button type="button" onClick={() => setGroupBy('projects')}
-            className={`px-3 h-full text-xs font-medium border-l border-neutral-200 ${groupBy === 'projects' ? 'bg-neutral-900 text-white' : 'bg-white text-neutral-600 hover:bg-neutral-50'}`}>Projects</button>
-        </div>
-        <span className="text-sm text-neutral-500 font-mono ml-1">{rangeLabel}</span>
+
         <div className="flex-1" />
-        <input type="text" placeholder="Filter by name…" value={nameFilter} onChange={e => setNameFilter(e.target.value)}
-          className="h-8 text-sm border border-neutral-200 rounded-[4px] px-3 focus:outline-none focus:ring-1 focus:ring-neutral-900 w-36" />
-        {groupBy === 'people' && (
-          <select value={typeFilter} onChange={e => setTypeFilter(e.target.value as typeof typeFilter)}
+
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative">
+            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-neutral-400" />
+            <input type="text" placeholder="Search…" value={nameFilter} onChange={e => setNameFilter(e.target.value)}
+              className="h-8 text-sm border border-neutral-200 rounded-[4px] pl-8 pr-3 focus:outline-none focus:ring-1 focus:ring-neutral-900 w-40" />
+          </div>
+          {groupBy === 'people' && (
+            <>
+              <select value={typeFilter} onChange={e => setTypeFilter(e.target.value as typeof typeFilter)}
+                className="h-8 text-sm border border-neutral-200 rounded-[4px] px-2 focus:outline-none focus:ring-1 focus:ring-neutral-900 bg-white">
+                <option value="all">All Types</option>
+                <option value="employee">Employees</option>
+                <option value="freelancer">Freelancers</option>
+                <option value="placeholder">Placeholders</option>
+                <option value="vendor">Vendors</option>
+              </select>
+              <select value={sortBy} onChange={e => setSortBy(e.target.value as 'name' | 'role')}
+                className="h-8 text-sm border border-neutral-200 rounded-[4px] px-2 focus:outline-none focus:ring-1 focus:ring-neutral-900 bg-white" title="Sort">
+                <option value="name">Sort: Name</option>
+                <option value="role">Sort: Role</option>
+              </select>
+            </>
+          )}
+          <select value={zoomIdx} onChange={e => setZoomIdx(Number(e.target.value))}
             className="h-8 text-sm border border-neutral-200 rounded-[4px] px-2 focus:outline-none focus:ring-1 focus:ring-neutral-900 bg-white">
-            <option value="all">All Types</option>
-            <option value="employee">Employees</option>
-            <option value="freelancer">Freelancers</option>
-            <option value="placeholder">Placeholders</option>
-            <option value="vendor">Vendors</option>
+            {ZOOMS.map((z, i) => <option key={z.label} value={i}>{z.label}</option>)}
           </select>
-        )}
-        <Button variant="outline" size="sm" className="h-8 text-xs gap-1" onClick={exportCSV}><Download size={13} /> CSV</Button>
-        <Button variant="outline" size="sm" className="h-8 text-xs gap-1" onClick={() => { setError(null); setPersonOpen(true) }}><UserPlus size={13} /> Person</Button>
-        <Button variant="outline" size="sm" className="h-8 text-xs gap-1" onClick={() => { setError(null); setMilestoneOpen(true) }}><Flag size={13} /> Milestone</Button>
-        <Button variant="outline" size="sm" className="h-8 text-xs gap-1" onClick={() => { setError(null); setTimeOffOpen(true) }}><CalendarOff size={13} /> Time Off</Button>
-        <Button size="sm" className="h-8 text-xs gap-1" onClick={() => { setError(null); setAllocDialog({ open: true, edit: null }) }}><Plus size={14} /> Assignment</Button>
+          <div className="flex items-center gap-1">
+            <Button variant="outline" size="sm" className="h-8 w-8 p-0" onClick={() => setWeekStart(mondayOf(addDays(rangeStart, -stepDays)))}><ChevronLeft size={15} /></Button>
+            <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => setWeekStart(mondayOf(new Date()))}>Today</Button>
+            <Button variant="outline" size="sm" className="h-8 w-8 p-0" onClick={() => setWeekStart(mondayOf(addDays(rangeStart, stepDays)))}><ChevronRight size={15} /></Button>
+          </div>
+          <span className="mx-1 h-5 w-px bg-neutral-200" />
+          <Button variant="outline" size="sm" className="h-8 text-xs gap-1" onClick={exportCSV}><Download size={13} /> CSV</Button>
+          <Button variant="outline" size="sm" className="h-8 text-xs gap-1" onClick={() => { setError(null); setPersonDialog({ open: true, edit: null }) }}><UserPlus size={13} /> Person</Button>
+          <Button variant="outline" size="sm" className="h-8 text-xs gap-1" onClick={() => { setError(null); setMilestoneOpen(true) }}><Flag size={13} /> Milestone</Button>
+          <Button variant="outline" size="sm" className="h-8 text-xs gap-1" onClick={() => { setError(null); setTimeOffOpen(true) }}><CalendarOff size={13} /> Time Off</Button>
+          <Button size="sm" className="h-8 text-xs gap-1" onClick={() => { setError(null); setAllocDialog({ open: true, edit: null }) }}><Plus size={14} /> Assignment</Button>
+        </div>
       </div>
 
-      <p className="text-xs text-neutral-400 mb-2">Tip: drag an empty row to draw an assignment, drag a bar to move it, or grab either edge to resize.</p>
+      <p className="text-xs text-neutral-400 mb-2">Tip: expand a row and drag to draw an assignment; drag a bar to move it or grab an edge to resize.</p>
 
       {/* Timeline grid */}
       <div ref={containerRef} className="bg-white border border-neutral-200 rounded-[4px] overflow-hidden">
         <div className="overflow-x-auto">
           <div style={{ minWidth: LABEL_W + gridW }}>
-            {/* Week label row */}
+            {/* Month + week-number band */}
             <div className="flex border-b border-neutral-200 bg-neutral-50">
               <div style={{ width: LABEL_W }} className="shrink-0 border-r border-neutral-200" />
-              {weeks.map((wk, i) => (
-                <div key={i} style={{ width: COL_W }}
-                  className={`shrink-0 px-2 py-1.5 text-center border-r border-neutral-200 ${todayMon === wk.getTime() ? 'bg-purple-50' : ''}`}>
-                  <div className="text-xs font-medium text-neutral-700">{wk.toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })}</div>
-                </div>
-              ))}
+              <div className="relative" style={{ width: gridW, height: 22 }}>
+                {monthGroups.map(g => (
+                  <div key={g.key} className="absolute top-0 bottom-0 flex items-center justify-center border-l border-neutral-200"
+                    style={{ left: g.startDay * DAY_W, width: g.len * DAY_W }}>
+                    <span className="text-xs font-semibold text-neutral-700">{g.label}</span>
+                  </div>
+                ))}
+                {weeks.map((wk, i) => (
+                  <span key={i} className="absolute top-0.5 text-[9px] text-neutral-400 pl-1" style={{ left: i * COL_W }}>
+                    W{getISOWeek(wk).week}
+                  </span>
+                ))}
+              </div>
             </div>
 
-            {/* Day-of-week row (fine zoom only) */}
-            {showDayLabels && (
-              <div className="flex border-b border-neutral-200 bg-neutral-50/70">
-                <div style={{ width: LABEL_W }} className="shrink-0 border-r border-neutral-200" />
-                {days.map((d, i) => {
-                  const wknd = d.getDay() === 0 || d.getDay() === 6
-                  return (
-                    <div key={i} style={{ width: DAY_W }}
-                      className={`shrink-0 text-center py-1 border-r border-neutral-100 ${wknd ? 'bg-neutral-200/50' : ''}`}>
-                      <div className="text-[10px] font-medium text-neutral-500 leading-none">{DOW[d.getDay()]}</div>
-                      {DAY_W >= 40 && <div className="text-[10px] text-neutral-400 leading-tight mt-0.5">{d.getDate()}</div>}
+            {/* Day (fine) or week (coarse) row */}
+            <div className="flex border-b border-neutral-200 bg-neutral-50/70">
+              <div style={{ width: LABEL_W }} className="shrink-0 border-r border-neutral-200" />
+              <div className="relative" style={{ width: gridW, height: showDayLabels ? 34 : 24, background: weekendBg }}>
+                {weeks.map((wk, i) => (
+                  <div key={i} className="absolute top-0 bottom-0 border-l border-neutral-200/70" style={{ left: i * COL_W }} />
+                ))}
+                {showDayLabels
+                  ? days.map((d, i) => {
+                    const isToday = toISO(d) === todayISO
+                    return (
+                      <div key={i} className="absolute flex flex-col items-center justify-center gap-0.5" style={{ left: i * DAY_W, width: DAY_W, top: 0, bottom: 0 }}>
+                        <span className="text-[9px] text-neutral-400 leading-none">{DOW[d.getDay()]}</span>
+                        <span className={`text-[11px] leading-none flex items-center justify-center ${isToday ? 'bg-[#3E0BE5] text-white rounded-full w-[18px] h-[18px]' : 'text-neutral-600'}`}>{d.getDate()}</span>
+                      </div>
+                    )
+                  })
+                  : weeks.map((wk, i) => (
+                    <div key={i} className="absolute flex items-center justify-center" style={{ left: i * COL_W, width: COL_W, top: 0, bottom: 0 }}>
+                      <span className="text-[11px] text-neutral-600">{wk.toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })}</span>
                     </div>
-                  )
-                })}
+                  ))}
               </div>
-            )}
+            </div>
 
             {/* Milestones strip */}
             <div className="flex border-b border-neutral-200 bg-neutral-50/60">
@@ -587,149 +652,148 @@ export function ResourcingTimeline({
                 <span className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wider">Milestones</span>
               </div>
               <div className="relative" style={{ width: gridW, height: MILESTONE_H, background: weekendBg }}>
-                {weeks.map((wk, i) => (
-                  <div key={i} className="absolute top-0 bottom-0 border-r border-neutral-200/70" style={{ left: i * COL_W, width: COL_W }} />
-                ))}
+                {weeks.map((wk, i) => <div key={i} className="absolute top-0 bottom-0 border-l border-neutral-200/60" style={{ left: i * COL_W }} />)}
                 {visibleMilestones.map(({ m, day }) => (
-                  <div key={m.id} className="absolute group -translate-x-1/2 flex flex-col items-center" style={{ left: day * DAY_W + DAY_W / 2, top: 4 }}
+                  <div key={m.id} className="absolute group -translate-x-1/2 flex flex-col items-center" style={{ left: day * DAY_W + DAY_W / 2, top: 3 }}
                     title={`${projects.find(p => p.id === m.project_id)?.name ?? ''} — ${m.name} (${m.date})`}>
                     <Flag size={13} style={{ color: projColor(m.project_id) }} className="fill-current" />
-                    <button onClick={() => handleDeleteMilestone(m.id)}
-                      className="opacity-0 group-hover:opacity-100 text-[9px] text-neutral-400 hover:text-red-600 leading-none mt-0.5">✕</button>
+                    <button onClick={() => handleDeleteMilestone(m.id)} className="opacity-0 group-hover:opacity-100 text-[9px] text-neutral-400 hover:text-red-600 leading-none mt-0.5">✕</button>
                   </div>
                 ))}
               </div>
             </div>
 
-            {/* Person rows */}
+            {/* Rows */}
             {rows.length === 0 ? (
               <div className="px-4 py-10 text-center text-sm text-neutral-400">{groupBy === 'projects' ? 'No projects match this filter.' : 'No people match this filter.'}</div>
             ) : (
               rows.map(row => {
+                const expanded = !collapsed.has(row.key)
                 const allocs = rowAllocations(row)
                 const laneOf = assignLanes(allocs)
                 const laneCount = Math.max(1, ...Array.from(laneOf.values()).map(l => l + 1))
                 const tos = rowTimeOff(row)
                 const totals = weeklyTotals(row)
                 const capacity = row.capacity
-                const barsH = laneCount * BAR_H + (laneCount - 1) * LANE_GAP  // occupied lanes
-                // One always-empty lane below the bars, so there's always somewhere to drag-create.
-                const emptyLaneTop = ROW_PAD + laneCount * (BAR_H + LANE_GAP)
-                const rowH = ROW_PAD * 2 + (laneCount + 1) * BAR_H + laneCount * LANE_GAP + TOTALS_H
+
+                const summaryTop = ROW_PAD
+                const summaryH = BAR_H
+                const barsTop = ROW_PAD + summaryH + LANE_GAP
+                const timeOffH = laneCount * BAR_H + (laneCount - 1) * LANE_GAP
+                const emptyLaneTop = barsTop + laneCount * (BAR_H + LANE_GAP)
+                const rowH = expanded
+                  ? barsTop + (laneCount + 1) * BAR_H + laneCount * LANE_GAP + ROW_PAD
+                  : ROW_PAD * 2 + summaryH
                 const isCreatingHere = preview?.createRowKey === row.key
+                const rp = row.editable ? resourcePeople.find(r => r.id === row.id) : undefined
 
                 return (
                   <div key={row.key} className="flex border-b border-neutral-100 last:border-0 group/row">
                     {/* Label */}
-                    <div style={{ width: LABEL_W, minHeight: rowH }} className="shrink-0 border-r border-neutral-200 px-3 py-2.5 flex items-center gap-2.5 group">
+                    <div style={{ width: LABEL_W, minHeight: rowH }} className="shrink-0 border-r border-neutral-200 pl-2 pr-3 py-2.5 flex items-start gap-1.5">
+                      <button onClick={() => toggleCollapse(row.key)} className="mt-0.5 text-neutral-400 hover:text-neutral-700 shrink-0" title={expanded ? 'Collapse' : 'Expand'}>
+                        {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                      </button>
                       <div className="w-7 h-7 rounded-full shrink-0 flex items-center justify-center text-xs font-semibold text-white" style={{ backgroundColor: row.color }}>
                         {row.name.charAt(0).toUpperCase()}
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium text-neutral-900 truncate">{row.name}</p>
-                        <p className="text-xs text-neutral-400 capitalize">{row.subtitle}</p>
+                        <p className="text-xs text-neutral-400 capitalize truncate">{row.subtitle}</p>
                       </div>
-                      {row.deletable && (
-                        <button onClick={() => handleDeletePerson(row.id)} className="opacity-0 group-hover:opacity-100 text-neutral-300 hover:text-red-600 shrink-0" title="Remove person">
-                          <Trash2 size={13} />
-                        </button>
+                      {row.editable && rp && (
+                        <div className="flex items-center gap-1 opacity-0 group-hover/row:opacity-100 shrink-0">
+                          <button onClick={() => { setError(null); setPersonDialog({ open: true, edit: rp }) }} className="text-neutral-300 hover:text-neutral-700" title="Edit person"><Pencil size={13} /></button>
+                          <button onClick={() => handleDeletePerson(row.id)} className="text-neutral-300 hover:text-red-600" title="Remove person"><Trash2 size={13} /></button>
+                        </div>
                       )}
                     </div>
 
-                    {/* Track (empty-area drag creates an assignment) */}
+                    {/* Track */}
                     <div
-                      className="relative cursor-crosshair"
+                      className={`relative ${expanded ? 'cursor-crosshair' : 'cursor-pointer'}`}
                       style={{ width: gridW, height: rowH, background: weekendBg }}
-                      onPointerDown={(e) => {
+                      onPointerDown={expanded ? (e) => {
                         const rect = e.currentTarget.getBoundingClientRect()
                         const startDay = Math.max(0, Math.min(totalDays - 1, Math.floor((e.clientX - rect.left) / DAY_W)))
                         beginDrag(e, { mode: 'create', rowKey: row.key, trackLeft: rect.left, startDay, moved: false })
-                      }}
+                      } : undefined}
+                      onClick={!expanded ? () => toggleCollapse(row.key) : undefined}
                     >
-                      {/* Week separators + today / over-capacity tint (decorative) */}
+                      {/* Week separators + today / over-capacity tint */}
                       {weeks.map((wk, i) => {
                         const over = totals[i] > capacity
                         return (
                           <div key={i}
-                            className={`absolute top-0 bottom-0 border-r border-neutral-200/70 pointer-events-none ${todayMon === wk.getTime() ? 'bg-purple-50/40' : ''} ${over ? 'bg-red-50/60' : ''}`}
+                            className={`absolute top-0 bottom-0 border-l border-neutral-200/60 pointer-events-none ${todayMon === wk.getTime() ? 'bg-purple-50/40' : ''} ${over ? 'bg-red-50/50' : ''}`}
                             style={{ left: i * COL_W, width: COL_W }} />
                         )
                       })}
 
-                      {/* Always-empty lane: a drag target that's clear even when bars fill the row */}
-                      {!isCreatingHere && (
-                        <div className="absolute rounded-[4px] border border-dashed border-neutral-300 bg-neutral-50/40 pointer-events-none flex items-center justify-center opacity-0 group-hover/row:opacity-100 transition-opacity"
-                          style={{ left: 0, width: gridW, top: emptyLaneTop, height: BAR_H }}>
-                          <span className="text-[10px] text-neutral-400">Drag to add an allocation</span>
-                        </div>
-                      )}
-
-                      {/* Create preview ghost */}
-                      {isCreatingHere && preview?.createStartDay != null && (
-                        <div className="absolute rounded-[4px] border-2 border-dashed border-neutral-400 bg-neutral-200/40 pointer-events-none"
-                          style={{ left: preview.createStartDay * DAY_W, width: (preview.createEndDay! - preview.createStartDay! + 1) * DAY_W, top: emptyLaneTop, height: BAR_H }} />
-                      )}
-
-                      {/* Time off */}
-                      {tos.map(to => {
-                        const { left, width } = barGeometry(to.start_date, to.end_date)
+                      {/* Availability summary lane (always shown) */}
+                      {weeks.map((wk, i) => {
+                        const s = summaryFor(row, totals[i], wk)
+                        if (!s) return null
                         return (
-                          <div key={to.id} className="absolute rounded-[3px] flex items-center px-2 group/to"
-                            onPointerDown={e => e.stopPropagation()}
-                            style={{ left, width, top: ROW_PAD, height: barsH, backgroundColor: '#f1f5f9',
-                              backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(100,116,139,0.12) 5px, rgba(100,116,139,0.12) 10px)',
-                              border: '1px solid #e2e8f0' }}
-                            title={`${TIME_OFF_LABELS[to.type]} · ${to.start_date} → ${to.end_date}`}>
-                            <span className="text-[11px] font-medium text-neutral-500 truncate">{TIME_OFF_LABELS[to.type]}</span>
-                            <button onClick={() => handleDeleteTimeOff(to.id)} className="opacity-0 group-hover/to:opacity-100 ml-auto text-neutral-400 hover:text-red-600"><Trash2 size={12} /></button>
+                          <div key={i} className={`absolute rounded-[3px] flex items-center justify-center pointer-events-none ${s.cls}`}
+                            style={{ left: i * COL_W + 2, width: COL_W - 4, top: summaryTop, height: summaryH }}>
+                            <span className="text-[10px] font-medium truncate px-1">{s.label}</span>
                           </div>
                         )
                       })}
 
-                      {/* Allocation bars */}
-                      {allocs.map(a => {
-                        const eff = preview?.id === a.id
-                          ? { start: preview.start_date!, end: preview.end_date! }
-                          : { start: a.start_date, end: a.end_date }
-                        const { left, width } = barGeometry(eff.start, eff.end)
-                        const lane = laneOf.get(a.id) ?? 0
-                        const hpd = Number(a.hours_per_day)
-                        const total = hpd * workingDaysBetween(eff.start, eff.end)
-                        // People view: bar = project. Project view: bar = person.
-                        const owner = personDisplay.get(ownerKey(a))
-                        const name = row.groupKind === 'project'
-                          ? (owner?.name ?? 'Person')
-                          : (projectMap.get(a.project_id)?.project.name ?? 'Project')
-                        const barColor = row.groupKind === 'project'
-                          ? (owner?.color ?? PALETTE[0])
-                          : projColor(a.project_id)
-                        return (
-                          <div key={a.id}
-                            onPointerDown={(e) => { e.stopPropagation(); beginDrag(e, { mode: 'move', id: a.id, startX: e.clientX, origStart: a.start_date, origEnd: a.end_date, moved: false }) }}
-                            className="absolute rounded-[4px] flex items-center text-left hover:brightness-110 transition-[filter] cursor-grab active:cursor-grabbing group/bar select-none"
-                            style={{ left, width, top: ROW_PAD + lane * (BAR_H + LANE_GAP), height: BAR_H, backgroundColor: barColor }}
-                            title={`${name} · ${hpd}h/day · ${total}h total · ${eff.start} → ${eff.end}`}>
-                            {/* left resize handle */}
-                            <div onPointerDown={(e) => { e.stopPropagation(); beginDrag(e, { mode: 'left', id: a.id, startX: e.clientX, origStart: a.start_date, origEnd: a.end_date, moved: false }) }}
-                              className="absolute left-0 top-0 bottom-0 cursor-col-resize opacity-0 group-hover/bar:opacity-100 bg-black/20 rounded-l-[4px]" style={{ width: HANDLE_W }} />
-                            <span className="text-[11px] font-medium text-white truncate px-2 pointer-events-none">
-                              {name} · {hpd}h/d · {total}h
-                            </span>
-                            {/* right resize handle */}
-                            <div onPointerDown={(e) => { e.stopPropagation(); beginDrag(e, { mode: 'right', id: a.id, startX: e.clientX, origStart: a.start_date, origEnd: a.end_date, moved: false }) }}
-                              className="absolute right-0 top-0 bottom-0 cursor-col-resize opacity-0 group-hover/bar:opacity-100 bg-black/20 rounded-r-[4px]" style={{ width: HANDLE_W }} />
+                      {expanded && <>
+                        {/* Empty drag lane */}
+                        {!isCreatingHere && (
+                          <div className="absolute rounded-[4px] border border-dashed border-neutral-300 bg-neutral-50/40 pointer-events-none flex items-center justify-center opacity-0 group-hover/row:opacity-100 transition-opacity"
+                            style={{ left: 0, width: gridW, top: emptyLaneTop, height: BAR_H }}>
+                            <span className="text-[10px] text-neutral-400">Drag to add an allocation</span>
                           </div>
-                        )
-                      })}
+                        )}
+                        {isCreatingHere && preview?.createStartDay != null && (
+                          <div className="absolute rounded-[4px] border-2 border-dashed border-neutral-400 bg-neutral-200/40 pointer-events-none"
+                            style={{ left: preview.createStartDay * DAY_W, width: (preview.createEndDay! - preview.createStartDay! + 1) * DAY_W, top: emptyLaneTop, height: BAR_H }} />
+                        )}
 
-                      {/* Weekly totals */}
-                      {totals.map((t, i) => (
-                        <div key={i} className={`absolute text-center text-[11px] font-mono pointer-events-none ${t > capacity ? 'text-red-600 font-semibold' : 'text-neutral-400'}`}
-                          style={{ left: i * COL_W, width: COL_W, bottom: 4 }}
-                          title={t > capacity ? `Over capacity (${capacity}h/wk)` : undefined}>
-                          {t > 0 ? `${t}h` : ''}
-                        </div>
-                      ))}
+                        {/* Time off */}
+                        {tos.map(to => {
+                          const { left, width } = barGeometry(to.start_date, to.end_date)
+                          return (
+                            <div key={to.id} className="absolute rounded-[3px] flex items-center px-2 group/to" onPointerDown={e => e.stopPropagation()}
+                              style={{ left, width, top: barsTop, height: timeOffH, backgroundColor: '#f1f5f9',
+                                backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(100,116,139,0.12) 5px, rgba(100,116,139,0.12) 10px)', border: '1px solid #e2e8f0' }}
+                              title={`${TIME_OFF_LABELS[to.type]} · ${to.start_date} → ${to.end_date}`}>
+                              <span className="text-[11px] font-medium text-neutral-500 truncate">{TIME_OFF_LABELS[to.type]}</span>
+                              <button onClick={() => handleDeleteTimeOff(to.id)} className="opacity-0 group-hover/to:opacity-100 ml-auto text-neutral-400 hover:text-red-600"><Trash2 size={12} /></button>
+                            </div>
+                          )
+                        })}
+
+                        {/* Allocation bars */}
+                        {allocs.map(a => {
+                          const eff = preview?.id === a.id ? { start: preview.start_date!, end: preview.end_date! } : { start: a.start_date, end: a.end_date }
+                          const { left, width } = barGeometry(eff.start, eff.end)
+                          const lane = laneOf.get(a.id) ?? 0
+                          const hpd = Number(a.hours_per_day)
+                          const total = hpd * workingDaysBetween(eff.start, eff.end)
+                          const owner = personDisplay.get(ownerKey(a))
+                          const name = row.groupKind === 'project' ? (owner?.name ?? 'Person') : (projectMap.get(a.project_id)?.project.name ?? 'Project')
+                          const barColor = row.groupKind === 'project' ? (owner?.color ?? PALETTE[0]) : projColor(a.project_id)
+                          return (
+                            <div key={a.id}
+                              onPointerDown={(e) => { e.stopPropagation(); beginDrag(e, { mode: 'move', id: a.id, startX: e.clientX, origStart: a.start_date, origEnd: a.end_date, moved: false }) }}
+                              className="absolute rounded-[4px] flex items-center text-left hover:brightness-110 transition-[filter] cursor-grab active:cursor-grabbing group/bar select-none"
+                              style={{ left, width, top: barsTop + lane * (BAR_H + LANE_GAP), height: BAR_H, backgroundColor: barColor }}
+                              title={`${name} · ${hpd}h/day · ${total}h total · ${eff.start} → ${eff.end}`}>
+                              <div onPointerDown={(e) => { e.stopPropagation(); beginDrag(e, { mode: 'left', id: a.id, startX: e.clientX, origStart: a.start_date, origEnd: a.end_date, moved: false }) }}
+                                className="absolute left-0 top-0 bottom-0 cursor-col-resize opacity-0 group-hover/bar:opacity-100 bg-black/20 rounded-l-[4px]" style={{ width: HANDLE_W }} />
+                              <span className="text-[11px] font-medium text-white truncate px-2 pointer-events-none">{name} · {hpd}h/d · {total}h</span>
+                              <div onPointerDown={(e) => { e.stopPropagation(); beginDrag(e, { mode: 'right', id: a.id, startX: e.clientX, origStart: a.start_date, origEnd: a.end_date, moved: false }) }}
+                                className="absolute right-0 top-0 bottom-0 cursor-col-resize opacity-0 group-hover/bar:opacity-100 bg-black/20 rounded-r-[4px]" style={{ width: HANDLE_W }} />
+                            </div>
+                          )
+                        })}
+                      </>}
                     </div>
                   </div>
                 )
@@ -807,26 +871,32 @@ export function ResourcingTimeline({
         </DialogContent>
       </Dialog>
 
-      {/* Resource person dialog */}
-      <Dialog open={personOpen} onOpenChange={v => { if (!v) setPersonOpen(false) }}>
+      {/* Resource person dialog (add / edit) */}
+      <Dialog open={personDialog.open} onOpenChange={v => { if (!v) setPersonDialog({ open: false, edit: null }) }}>
         <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>Add placeholder / vendor</DialogTitle></DialogHeader>
-          <form onSubmit={handlePersonSubmit} className="space-y-3 pt-1">
-            <Field label="Name"><input name="name" type="text" required placeholder="e.g. Motion Designer (TBD), Acme Studio" className={inputCls} /></Field>
+          <DialogHeader><DialogTitle>{personDialog.edit ? 'Edit placeholder / vendor' : 'Add placeholder / vendor'}</DialogTitle></DialogHeader>
+          <form key={personDialog.edit?.id ?? 'new'} onSubmit={handlePersonSubmit} className="space-y-3 pt-1">
+            <Field label="Name"><input name="name" type="text" required defaultValue={personDialog.edit?.name ?? ''} placeholder="e.g. Motion Designer (TBD), Acme Studio" className={inputCls} /></Field>
+            <Field label="Role"><input name="title" type="text" defaultValue={personDialog.edit?.title ?? ''} placeholder="Designer, Developer, Editor…" className={inputCls} /></Field>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Kind">
-                <select name="kind" defaultValue="placeholder" required className={selectCls}>
+                <select name="kind" defaultValue={personDialog.edit?.kind ?? 'placeholder'} required className={selectCls}>
                   <option value="placeholder">Placeholder (unfilled role)</option>
                   <option value="vendor">Vendor (external)</option>
                 </select>
               </Field>
-              <Field label="Daily hours"><input name="daily_hours" type="number" min="0" max="24" step="0.5" defaultValue={8} required className={inputCls} /></Field>
+              <Field label="Daily hours"><input name="daily_hours" type="number" min="0" max="24" step="0.5" defaultValue={personDialog.edit?.daily_hours ?? 8} required className={inputCls} /></Field>
             </div>
-            <Field label="Colour"><input name="color" type="color" defaultValue="#3E0BE5" className="h-9 w-16 border border-neutral-200 rounded-[4px] p-1 cursor-pointer" /></Field>
+            <Field label="Colour"><input name="color" type="color" defaultValue={personDialog.edit?.color ?? '#3E0BE5'} className="h-9 w-16 border border-neutral-200 rounded-[4px] p-1 cursor-pointer" /></Field>
             {error && <p className="text-xs text-red-600">{error}</p>}
-            <div className="flex justify-end gap-2 pt-1">
-              <Button type="button" variant="outline" size="sm" onClick={() => setPersonOpen(false)}>Cancel</Button>
-              <Button type="submit" size="sm" disabled={saving}>{saving ? 'Saving…' : 'Add'}</Button>
+            <div className="flex items-center justify-between pt-1">
+              {personDialog.edit ? (
+                <Button type="button" variant="outline" size="sm" className="text-red-600 border-red-200 hover:bg-red-50 gap-1" onClick={() => handleDeletePerson(personDialog.edit!.id)}><Trash2 size={13} /> Delete</Button>
+              ) : <span />}
+              <div className="flex gap-2">
+                <Button type="button" variant="outline" size="sm" onClick={() => setPersonDialog({ open: false, edit: null })}>Cancel</Button>
+                <Button type="submit" size="sm" disabled={saving}>{saving ? 'Saving…' : personDialog.edit ? 'Save' : 'Add'}</Button>
+              </div>
             </div>
           </form>
         </DialogContent>

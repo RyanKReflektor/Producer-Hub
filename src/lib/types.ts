@@ -10,6 +10,7 @@ export interface Profile {
   name: string
   role: UserRole
   person_type: PersonType | null
+  title: string | null
   avatar_url: string | null
   internal_rate: number | null
   external_rate: number | null
@@ -130,6 +131,7 @@ export interface ResourcePerson {
   id: string
   name: string
   kind: ResourcePersonKind
+  title: string | null
   color: string | null
   daily_hours: number
   active: boolean

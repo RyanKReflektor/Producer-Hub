@@ -22,12 +22,15 @@ export async function createPerson(formData: FormData) {
   const { data: authData, error: authError } = await admin.auth.admin.inviteUserByEmail(email)
   if (authError) throw new Error(authError.message)
 
+  const title = formData.get('title') as string
+
   const { error: profileError } = await admin.from('profiles').insert({
     id: authData.user.id,
     email,
     name,
     role,
     person_type: personType || null,
+    title: title || null,
     internal_rate: internalRate ? Number(internalRate) : null,
     external_rate: externalRate ? Number(externalRate) : null,
     active: true,
@@ -50,6 +53,7 @@ export async function updatePerson(id: string, formData: FormData) {
   const name = formData.get('name') as string
   const role = formData.get('role') as string
   const personType = formData.get('person_type') as string
+  const title = formData.get('title') as string
   const internalRate = formData.get('internal_rate') as string
   const externalRate = formData.get('external_rate') as string
 
@@ -57,6 +61,7 @@ export async function updatePerson(id: string, formData: FormData) {
     name,
     role,
     person_type: personType || null,
+    title: title || null,
     internal_rate: internalRate ? Number(internalRate) : null,
     external_rate: externalRate ? Number(externalRate) : null,
   }).eq('id', id)

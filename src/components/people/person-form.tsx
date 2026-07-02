@@ -106,6 +106,16 @@ export function PersonForm({ person, onSuccess }: PersonFormProps) {
           </div>
         </div>
 
+        <div className="space-y-1.5">
+          <Label htmlFor="title">Job Title / Role</Label>
+          <Input
+            id="title"
+            name="title"
+            defaultValue={person?.title ?? ''}
+            placeholder="Designer, Developer, Project Manager…"
+          />
+        </div>
+
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-1.5">
             <Label htmlFor="internal_rate">Internal Rate ($/hr)</Label>
