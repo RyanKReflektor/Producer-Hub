@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useRef } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import { ChevronLeft, ChevronRight, Plus, CalendarOff, Download, Trash2, UserPlus, Flag } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -36,11 +36,13 @@ const MILESTONE_H = 30
 const HANDLE_W = 7
 const DRAG_THRESHOLD = 3
 
+// `minDayW` is a floor for small screens; the actual day width scales up to
+// fill the available container width (see DAY_W below).
 const ZOOMS = [
-  { label: '2 weeks', days: 14, dayW: 46 },
-  { label: 'Month', days: 35, dayW: 26 },
-  { label: '3 months', days: 91, dayW: 11 },
-  { label: '6 months', days: 182, dayW: 6 },
+  { label: '2 weeks', days: 14, minDayW: 40 },
+  { label: 'Month', days: 35, minDayW: 20 },
+  { label: '3 months', days: 91, minDayW: 9 },
+  { label: '6 months', days: 182, minDayW: 5 },
 ]
 
 const PALETTE = ['#3E0BE5', '#0EA5E9', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#14B8A6']
@@ -145,9 +147,25 @@ export function ResourcingTimeline({
   const dragRef = useRef<Drag | null>(null)
   const [preview, setPreview] = useState<Preview | null>(null)
 
+  // Measure the timeline container so the day width can scale to fill it.
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [containerW, setContainerW] = useState(1200)
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const ro = new ResizeObserver(entries => {
+      for (const e of entries) setContainerW(e.contentRect.width)
+    })
+    ro.observe(el)
+    setContainerW(el.clientWidth)
+    return () => ro.disconnect()
+  }, [])
+
   const zoom = ZOOMS[zoomIdx]
   const totalDays = zoom.days
-  const DAY_W = zoom.dayW
+  // Fill the available width; fall back to the per-zoom minimum on small screens.
+  const availableW = Math.max(280, containerW - LABEL_W)
+  const DAY_W = Math.max(zoom.minDayW, availableW / totalDays)
   const COL_W = DAY_W * 7
   const showDayLabels = DAY_W >= 20
   const gridW = totalDays * DAY_W
@@ -496,7 +514,7 @@ export function ResourcingTimeline({
       <p className="text-xs text-neutral-400 mb-2">Tip: drag an empty row to draw an assignment, drag a bar to move it, or grab either edge to resize.</p>
 
       {/* Timeline grid */}
-      <div className="bg-white border border-neutral-200 rounded-[4px] overflow-hidden">
+      <div ref={containerRef} className="bg-white border border-neutral-200 rounded-[4px] overflow-hidden">
         <div className="overflow-x-auto">
           <div style={{ minWidth: LABEL_W + gridW }}>
             {/* Week label row */}
