@@ -612,12 +612,14 @@ export function ResourcingTimeline({
                 const tos = rowTimeOff(row)
                 const totals = weeklyTotals(row)
                 const capacity = row.capacity
-                const barsH = laneCount * BAR_H + (laneCount - 1) * LANE_GAP
-                const rowH = ROW_PAD * 2 + barsH + TOTALS_H
+                const barsH = laneCount * BAR_H + (laneCount - 1) * LANE_GAP  // occupied lanes
+                // One always-empty lane below the bars, so there's always somewhere to drag-create.
+                const emptyLaneTop = ROW_PAD + laneCount * (BAR_H + LANE_GAP)
+                const rowH = ROW_PAD * 2 + (laneCount + 1) * BAR_H + laneCount * LANE_GAP + TOTALS_H
                 const isCreatingHere = preview?.createRowKey === row.key
 
                 return (
-                  <div key={row.key} className="flex border-b border-neutral-100 last:border-0">
+                  <div key={row.key} className="flex border-b border-neutral-100 last:border-0 group/row">
                     {/* Label */}
                     <div style={{ width: LABEL_W, minHeight: rowH }} className="shrink-0 border-r border-neutral-200 px-3 py-2.5 flex items-center gap-2.5 group">
                       <div className="w-7 h-7 rounded-full shrink-0 flex items-center justify-center text-xs font-semibold text-white" style={{ backgroundColor: row.color }}>
@@ -654,10 +656,18 @@ export function ResourcingTimeline({
                         )
                       })}
 
+                      {/* Always-empty lane: a drag target that's clear even when bars fill the row */}
+                      {!isCreatingHere && (
+                        <div className="absolute rounded-[4px] border border-dashed border-neutral-300 bg-neutral-50/40 pointer-events-none flex items-center justify-center opacity-0 group-hover/row:opacity-100 transition-opacity"
+                          style={{ left: 0, width: gridW, top: emptyLaneTop, height: BAR_H }}>
+                          <span className="text-[10px] text-neutral-400">Drag to add an allocation</span>
+                        </div>
+                      )}
+
                       {/* Create preview ghost */}
                       {isCreatingHere && preview?.createStartDay != null && (
                         <div className="absolute rounded-[4px] border-2 border-dashed border-neutral-400 bg-neutral-200/40 pointer-events-none"
-                          style={{ left: preview.createStartDay * DAY_W, width: (preview.createEndDay! - preview.createStartDay! + 1) * DAY_W, top: ROW_PAD, height: BAR_H }} />
+                          style={{ left: preview.createStartDay * DAY_W, width: (preview.createEndDay! - preview.createStartDay! + 1) * DAY_W, top: emptyLaneTop, height: BAR_H }} />
                       )}
 
                       {/* Time off */}
