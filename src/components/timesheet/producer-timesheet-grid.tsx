@@ -27,6 +27,7 @@ export function ProducerTimesheetGrid({ projects, timeEntries, monday }: Props) 
     return m
   })
   const [savingKeys, setSavingKeys] = useState<Set<string>>(new Set())
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   const handleBlur = useCallback(async (projectId: string, date: string, value: string) => {
     const hours = parseFloat(value) || 0
@@ -39,8 +40,9 @@ export function ProducerTimesheetGrid({ projects, timeEntries, monday }: Props) 
         if (hours === 0) next.delete(k); else next.set(k, hours.toString())
         return next
       })
+      setSaveError(null)
     } catch (err) {
-      console.error('Error saving time:', err)
+      setSaveError(err instanceof Error ? err.message : 'Could not save — your hours were not stored. Try again.')
     } finally {
       setSavingKeys(prev => { const n = new Set(prev); n.delete(k); return n })
     }
@@ -69,6 +71,11 @@ export function ProducerTimesheetGrid({ projects, timeEntries, monday }: Props) 
 
   return (
     <div>
+      {saveError && (
+        <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-[4px] text-red-700 text-sm">
+          {saveError}
+        </div>
+      )}
       <div className="bg-white border border-neutral-200 rounded-[4px] overflow-auto">
         <table className="w-full text-sm">
           <thead>

@@ -50,12 +50,17 @@ export default async function ProducerTimesheetPage({ searchParams }: PageProps)
     return ac - bc || a.name.localeCompare(b.name)
   })
 
+  // Read by actual date range (Mon–Sun), not week_number/year — the date column
+  // is unambiguous, so entries always come back regardless of how the ISO week
+  // was computed at save time.
+  const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6)
   const { data: timeEntries } = await supabase
     .from('time_entries')
     .select('*')
     .eq('person_id', user.id)
-    .eq('week_number', weekNum)
-    .eq('year', year)
+    .gte('date', iso(monday))
+    .lte('date', iso(sunday))
 
   return (
     <>
