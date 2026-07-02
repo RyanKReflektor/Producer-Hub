@@ -87,7 +87,12 @@ export function ProducerTimesheetGrid({ projects, timeEntries, monday }: Props) 
             {projects.map((project, rowIdx) => (
               <tr key={project.id} className="border-b border-neutral-100 last:border-0 hover:bg-neutral-50/50">
                 <td className="px-4 py-2">
-                  <div className="font-medium text-neutral-900 text-sm leading-tight">{project.name}</div>
+                  <div className="font-medium text-neutral-900 text-sm leading-tight flex items-center gap-1.5">
+                    {project.name}
+                    {project.status === 'completed' && (
+                      <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-400 font-normal">Completed</span>
+                    )}
+                  </div>
                   <div className="text-neutral-400 text-xs">{project.client}</div>
                 </td>
                 {days.map((day, dayIdx) => {

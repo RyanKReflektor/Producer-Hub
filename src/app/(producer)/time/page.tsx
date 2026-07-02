@@ -37,13 +37,18 @@ export default async function ProducerTimesheetPage({ searchParams }: PageProps)
   const { week: thisWeek, year: thisYear } = getISOWeek(now)
   const currentMonday = getMondayOfWeek(thisWeek, thisYear)
 
-  // Producers can bill to any active project.
+  // Producers can bill to any project — including completed ones (late billing,
+  // post-delivery fixes). Active/in-flight projects sort first, completed last.
   const admin = createAdminClient()
-  const { data: projects } = await admin
+  const { data: allProjects } = await admin
     .from('projects')
     .select('id, name, client, status')
-    .not('status', 'eq', 'completed')
     .order('name')
+  const projects = (allProjects || []).sort((a, b) => {
+    const ac = a.status === 'completed' ? 1 : 0
+    const bc = b.status === 'completed' ? 1 : 0
+    return ac - bc || a.name.localeCompare(b.name)
+  })
 
   const { data: timeEntries } = await supabase
     .from('time_entries')
