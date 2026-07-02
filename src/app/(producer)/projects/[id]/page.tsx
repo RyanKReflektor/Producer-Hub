@@ -168,27 +168,6 @@ export default async function ProjectDetailPage({
   }
   const weeklyBurn = Array.from(weekMap.values())
 
-  // Person breakdown (for overview tab)
-  const personMap = new Map<string, { name: string; hours: number; internal_cost: number; external_cost: number }>()
-  for (const entry of (timeEntries || [])) {
-    if (!personMap.has(entry.person_id)) {
-      personMap.set(entry.person_id, {
-        name: profileMap.get(entry.person_id)?.name ?? 'Unknown',
-        hours: 0,
-        internal_cost: 0,
-        external_cost: 0,
-      })
-    }
-    const existing = personMap.get(entry.person_id)!
-    personMap.set(entry.person_id, {
-      ...existing,
-      hours: existing.hours + Number(entry.hours),
-      internal_cost: existing.internal_cost + Number(entry.hours) * effectiveInternalRate(entry.person_id),
-      external_cost: existing.external_cost + Number(entry.hours) * effectiveExternalRate(entry.person_id),
-    })
-  }
-  const personBreakdown = Array.from(personMap.values())
-
   // Group pending entries by person+week
   type EntryGroup = {
     key: string
@@ -274,6 +253,16 @@ export default async function ProjectDetailPage({
     ...(assignments || []).map(a => buildLabourRow(a.person_id, a.estimated_hours ? Number(a.estimated_hours) : null)),
     ...unassignedWithTime.map(id => buildLabourRow(id, null)),
   ]
+
+  // Labour totals (shared by Overview + Financials labour tables)
+  const anyEst = labourRows.some(r => r.estimatedHours !== null)
+  const labourTotals = {
+    estHours: anyEst ? labourRows.reduce((s, r) => s + (r.estimatedHours ?? 0), 0) : null,
+    actualHours: labourRows.reduce((s, r) => s + r.actualHours, 0),
+    hrsRemaining: anyEst ? labourRows.reduce((s, r) => s + (r.hrsRemaining ?? 0), 0) : null,
+    internalCost: labourRows.reduce((s, r) => s + r.actualInternalCost, 0),
+    externalCost: labourRows.reduce((s, r) => s + r.actualExternalCost, 0),
+  }
 
   // SOW Total for financials (only meaningful for dollar budgets)
   const sowTotal = project.budget_type === 'dollars' ? Number(project.budget_value) : null
@@ -365,39 +354,82 @@ export default async function ProjectDetailPage({
             isProducer={true}
           />
 
-          {/* People breakdown */}
+          {/* Labour (same as Financials — includes everyone with logged time, producers included) */}
           <div className="bg-white border border-neutral-200 rounded-[4px] mb-6">
             <div className="px-4 py-3 border-b border-neutral-100">
-              <h2 className="text-sm font-semibold text-neutral-900">People Breakdown</h2>
+              <h2 className="text-sm font-semibold text-neutral-900">Labour</h2>
+              <p className="text-xs text-neutral-400 mt-0.5">Approved time entries only</p>
             </div>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Person</TableHead>
-                  <TableHead className="text-right">Hours</TableHead>
-                  <TableHead className="text-right">Internal Cost</TableHead>
-                  <TableHead className="text-right">External Cost</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {personBreakdown.length === 0 ? (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
                   <TableRow>
-                    <TableCell colSpan={4} className="text-center text-neutral-500 py-6">
-                      No approved time entries yet
-                    </TableCell>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead className="text-right">Est Hrs</TableHead>
+                    <TableHead className="text-right">Actual Hrs</TableHead>
+                    <TableHead className="text-right">Hrs Remaining</TableHead>
+                    <TableHead className="text-right">Int Rate</TableHead>
+                    <TableHead className="text-right">Int Cost</TableHead>
+                    <TableHead className="text-right">Ext Rate</TableHead>
+                    <TableHead className="text-right">Ext Cost</TableHead>
                   </TableRow>
-                ) : (
-                  personBreakdown.map(person => (
-                    <TableRow key={person.name}>
-                      <TableCell className="font-medium text-neutral-900">{person.name}</TableCell>
-                      <TableCell className="text-right font-mono">{formatHours(person.hours)}</TableCell>
-                      <TableCell className="text-right font-mono">{formatCurrency(person.internal_cost, project.currency)}</TableCell>
-                      <TableCell className="text-right font-mono">{formatCurrency(person.external_cost, project.currency)}</TableCell>
+                </TableHeader>
+                <TableBody>
+                  {labourRows.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={9} className="text-center text-neutral-400 py-6">
+                        No time logged yet.
+                      </TableCell>
                     </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
+                  ) : (
+                    labourRows.map(row => {
+                      const overBudgetHrs = row.hrsRemaining !== null && row.hrsRemaining < 0
+                      return (
+                        <TableRow key={row.personId}>
+                          <TableCell className="font-medium text-neutral-900">{row.name}</TableCell>
+                          <TableCell className="text-neutral-500 capitalize text-xs">
+                            {row.personType === 'freelancer' ? 'FL' : row.personType === 'employee' ? 'EE' : '—'}
+                          </TableCell>
+                          <TableCell className="text-right font-mono text-neutral-600">
+                            {row.estimatedHours !== null ? formatHours(row.estimatedHours) : '—'}
+                          </TableCell>
+                          <TableCell className="text-right font-mono">{formatHours(row.actualHours)}</TableCell>
+                          <TableCell className={`text-right font-mono ${overBudgetHrs ? 'text-red-600 font-semibold' : 'text-neutral-700'}`}>
+                            {row.hrsRemaining !== null ? formatHours(row.hrsRemaining) : '—'}
+                          </TableCell>
+                          <TableCell className="text-right font-mono text-neutral-600">
+                            {row.internalRate > 0 ? `$${row.internalRate.toFixed(2)}` : '—'}
+                          </TableCell>
+                          <TableCell className="text-right font-mono">{formatCurrency(row.actualInternalCost, project.currency)}</TableCell>
+                          <TableCell className="text-right font-mono text-neutral-600">
+                            {row.externalRate > 0 ? `$${row.externalRate.toFixed(2)}` : '—'}
+                          </TableCell>
+                          <TableCell className="text-right font-mono">{formatCurrency(row.actualExternalCost, project.currency)}</TableCell>
+                        </TableRow>
+                      )
+                    })
+                  )}
+                  {labourRows.length > 0 && (
+                    <TableRow className="bg-neutral-50 font-semibold">
+                      <TableCell className="text-neutral-700">Total</TableCell>
+                      <TableCell />
+                      <TableCell className="text-right font-mono text-neutral-600">
+                        {labourTotals.estHours !== null ? formatHours(labourTotals.estHours) : '—'}
+                      </TableCell>
+                      <TableCell className="text-right font-mono">{formatHours(labourTotals.actualHours)}</TableCell>
+                      <TableCell className={`text-right font-mono ${labourTotals.hrsRemaining !== null && labourTotals.hrsRemaining < 0 ? 'text-red-600' : 'text-neutral-700'}`}>
+                        {labourTotals.hrsRemaining !== null ? formatHours(labourTotals.hrsRemaining) : '—'}
+                      </TableCell>
+                      <TableCell />
+                      <TableCell className="text-right font-mono">{formatCurrency(labourTotals.internalCost, project.currency)}</TableCell>
+                      <TableCell />
+                      <TableCell className="text-right font-mono">{formatCurrency(labourTotals.externalCost, project.currency)}</TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
           </div>
 
           {/* Pending approvals */}
