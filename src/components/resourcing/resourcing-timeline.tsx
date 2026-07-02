@@ -28,16 +28,23 @@ import type {
 
 // ── Layout constants ────────────────────────────────────────────────────────
 const LABEL_W = 224
-const COL_W = 128
-const DAY_W = COL_W / 7
-const WEEKS = 12
 const BAR_H = 24
 const LANE_GAP = 4
 const TOTALS_H = 22
 const ROW_PAD = 10
 const MILESTONE_H = 30
+const HANDLE_W = 7
+const DRAG_THRESHOLD = 3
+
+const ZOOMS = [
+  { label: '2 weeks', days: 14, dayW: 46 },
+  { label: 'Month', days: 35, dayW: 26 },
+  { label: '3 months', days: 91, dayW: 11 },
+  { label: '6 months', days: 182, dayW: 6 },
+]
 
 const PALETTE = ['#3E0BE5', '#0EA5E9', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#14B8A6']
+const DOW = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
 
 const TIME_OFF_LABELS: Record<TimeOffType, string> = {
   vacation: 'Vacation', holiday: 'Holiday', sick: 'Sick', other: 'Time Off',
@@ -52,6 +59,7 @@ function toISO(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 function addDays(d: Date, n: number): Date { const r = new Date(d); r.setDate(r.getDate() + n); return r }
+function addISO(iso: string, n: number): string { return toISO(addDays(parseISO(iso), n)) }
 function mondayOf(d: Date): Date {
   const r = new Date(d)
   const day = r.getDay() || 7
@@ -59,8 +67,15 @@ function mondayOf(d: Date): Date {
   return r
 }
 function daysBetween(a: Date, b: Date): number { return Math.round((b.getTime() - a.getTime()) / 86400000) }
+function workingDaysBetween(startISO: string, endISO: string): number {
+  let n = 0
+  for (let d = parseISO(startISO); d <= parseISO(endISO); d = addDays(d, 1)) {
+    const w = d.getDay()
+    if (w >= 1 && w <= 5) n++
+  }
+  return n
+}
 
-// A unified row in the timeline — a real person (profile) or a placeholder/vendor.
 interface Row {
   key: string
   kind: 'profile' | 'resource'
@@ -80,6 +95,23 @@ function parseOwner(key: string): OwnerRef {
   return kind === 'p' ? { personId: id, resourcePersonId: null } : { personId: null, resourcePersonId: id }
 }
 
+// Live drag bookkeeping (held in a ref so window listeners see fresh values).
+// `cur*` fields are updated on every move so pointer-up reads the final value
+// without hitting a stale React state closure.
+type Drag =
+  | { mode: 'move' | 'left' | 'right'; id: string; startX: number; origStart: string; origEnd: string; moved: boolean; curStart?: string; curEnd?: string }
+  | { mode: 'create'; rowKey: string; trackLeft: number; startDay: number; moved: boolean; curStartDay?: number; curEndDay?: number }
+
+// Preview positions rendered mid-drag
+interface Preview {
+  id?: string
+  start_date?: string
+  end_date?: string
+  createRowKey?: string
+  createStartDay?: number
+  createEndDay?: number
+}
+
 interface Props {
   people: Profile[]
   projects: Project[]
@@ -95,6 +127,7 @@ export function ResourcingTimeline({
 }: Props) {
   const today = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d }, [])
   const [weekStart, setWeekStart] = useState<Date>(() => mondayOf(new Date()))
+  const [zoomIdx, setZoomIdx] = useState(2)
   const [allocations, setAllocations] = useState<ResourceAllocation[]>(initialAllocations)
   const [timeOff, setTimeOff] = useState<TimeOff[]>(initialTimeOff)
   const [resourcePeople, setResourcePeople] = useState<ResourcePerson[]>(initialResourcePeople)
@@ -102,14 +135,22 @@ export function ResourcingTimeline({
   const [nameFilter, setNameFilter] = useState('')
   const [typeFilter, setTypeFilter] = useState<'all' | 'employee' | 'freelancer' | 'placeholder' | 'vendor'>('all')
 
-  const [allocDialog, setAllocDialog] = useState<{ open: boolean; edit: ResourceAllocation | null }>({ open: false, edit: null })
+  const [allocDialog, setAllocDialog] = useState<{ open: boolean; edit: ResourceAllocation | null; prefill?: { owner: string; start: string; end: string } }>({ open: false, edit: null })
   const [timeOffOpen, setTimeOffOpen] = useState(false)
   const [personOpen, setPersonOpen] = useState(false)
   const [milestoneOpen, setMilestoneOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const scrollRef = useRef<HTMLDivElement>(null)
+  const dragRef = useRef<Drag | null>(null)
+  const [preview, setPreview] = useState<Preview | null>(null)
+
+  const zoom = ZOOMS[zoomIdx]
+  const totalDays = zoom.days
+  const DAY_W = zoom.dayW
+  const COL_W = DAY_W * 7
+  const showDayLabels = DAY_W >= 20
+  const gridW = totalDays * DAY_W
 
   const projectMap = useMemo(() => new Map(projects.map((p, i) => [p.id, { project: p, idx: i }])), [projects])
   function projColor(projectId: string): string {
@@ -117,7 +158,6 @@ export function ResourcingTimeline({
     return e?.project.color || PALETTE[(e?.idx ?? 0) % PALETTE.length]
   }
 
-  // Unified, filtered rows
   const rows: Row[] = useMemo(() => {
     const profileRows: Row[] = people.map((p, i) => ({
       key: `p:${p.id}`, kind: 'profile', id: p.id, name: p.name,
@@ -145,12 +185,14 @@ export function ResourcingTimeline({
     })
   }, [people, resourcePeople, nameFilter, typeFilter])
 
-  const weeks = useMemo(() => Array.from({ length: WEEKS }, (_, i) => addDays(weekStart, i * 7)), [weekStart])
-  const rangeStart = weeks[0]
-  const rangeEnd = addDays(weekStart, WEEKS * 7 - 1)
-  const totalDays = WEEKS * 7
-  const gridW = totalDays * DAY_W
+  const rangeStart = useMemo(() => mondayOf(weekStart), [weekStart])
+  const weeks = useMemo(() => Array.from({ length: totalDays / 7 }, (_, i) => addDays(rangeStart, i * 7)), [rangeStart, totalDays])
+  const days = useMemo(() => Array.from({ length: totalDays }, (_, i) => addDays(rangeStart, i)), [rangeStart, totalDays])
+  const rangeEnd = addDays(rangeStart, totalDays - 1)
   const todayMon = mondayOf(today).getTime()
+
+  // Weekend stripes: transparent for Mon–Fri, subtle shade for Sat/Sun of each week
+  const weekendBg = `repeating-linear-gradient(90deg, transparent 0px, transparent ${5 * DAY_W}px, rgba(15,23,42,0.045) ${5 * DAY_W}px, rgba(15,23,42,0.045) ${7 * DAY_W}px)`
 
   function rowAllocations(row: Row) {
     return allocations
@@ -203,7 +245,90 @@ export function ResourcingTimeline({
     return { left, width }
   }
 
-  // ── Handlers ───────────────────────────────────────────────────────────────
+  // ── Drag interactions ────────────────────────────────────────────────────
+  function beginDrag(e: React.PointerEvent, drag: Drag) {
+    e.preventDefault()
+    dragRef.current = drag
+    document.body.style.userSelect = 'none'
+
+    const onMove = (ev: PointerEvent) => {
+      const d = dragRef.current
+      if (!d) return
+      if (d.mode === 'create') {
+        const day = Math.max(0, Math.min(totalDays - 1, Math.floor((ev.clientX - d.trackLeft) / DAY_W)))
+        if (day !== d.startDay) d.moved = true
+        d.curStartDay = Math.min(d.startDay, day)
+        d.curEndDay = Math.max(d.startDay, day)
+        setPreview({ createRowKey: d.rowKey, createStartDay: d.curStartDay, createEndDay: d.curEndDay })
+        return
+      }
+      const deltaDays = Math.round((ev.clientX - d.startX) / DAY_W)
+      if (Math.abs(ev.clientX - d.startX) > DRAG_THRESHOLD) d.moved = true
+      if (d.mode === 'move') {
+        d.curStart = addISO(d.origStart, deltaDays)
+        d.curEnd = addISO(d.origEnd, deltaDays)
+      } else if (d.mode === 'left') {
+        let ns = addISO(d.origStart, deltaDays)
+        if (ns > d.origEnd) ns = d.origEnd
+        d.curStart = ns; d.curEnd = d.origEnd
+      } else {
+        let ne = addISO(d.origEnd, deltaDays)
+        if (ne < d.origStart) ne = d.origStart
+        d.curStart = d.origStart; d.curEnd = ne
+      }
+      setPreview({ id: d.id, start_date: d.curStart, end_date: d.curEnd })
+    }
+
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      document.body.style.userSelect = ''
+      const d = dragRef.current
+      dragRef.current = null
+      setPreview(null)
+      if (!d) return
+
+      if (d.mode === 'create') {
+        const startDay = d.curStartDay ?? d.startDay
+        const endDay = d.curEndDay ?? d.startDay
+        setAllocDialog({
+          open: true, edit: null,
+          prefill: { owner: d.rowKey, start: toISO(addDays(rangeStart, startDay)), end: toISO(addDays(rangeStart, endDay)) },
+        })
+        setError(null)
+        return
+      }
+
+      const alloc = allocations.find(a => a.id === d.id)
+      if (!alloc) return
+      if (!d.moved) {
+        setAllocDialog({ open: true, edit: alloc }); setError(null)
+        return
+      }
+      const start = d.curStart ?? alloc.start_date
+      const end = d.curEnd ?? alloc.end_date
+      if (start === alloc.start_date && end === alloc.end_date) return
+      commitDates(alloc, start, end)
+    }
+
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }
+
+  async function commitDates(alloc: ResourceAllocation, start: string, end: string) {
+    setAllocations(prev => prev.map(a => a.id === alloc.id ? { ...a, start_date: start, end_date: end } : a))
+    try {
+      await updateAllocation(
+        alloc.id,
+        { personId: alloc.person_id, resourcePersonId: alloc.resource_person_id },
+        alloc.project_id, start, end, alloc.hours_per_day, alloc.note ?? '',
+      )
+    } catch {
+      setAllocations(prev => prev.map(a => a.id === alloc.id ? alloc : a))
+    }
+  }
+
+  // ── Form handlers ──────────────────────────────────────────────────────────
   async function handleAllocSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     const fd = new FormData(e.currentTarget)
@@ -264,13 +389,9 @@ export function ResourcingTimeline({
   async function handlePersonSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     const fd = new FormData(e.currentTarget)
-    const name = fd.get('name') as string
-    const kind = fd.get('kind') as ResourcePersonKind
-    const color = fd.get('color') as string
-    const dailyHours = Number(fd.get('daily_hours'))
     setSaving(true); setError(null)
     try {
-      const created = await createResourcePerson(name, kind, color, dailyHours)
+      const created = await createResourcePerson(fd.get('name') as string, fd.get('kind') as ResourcePersonKind, fd.get('color') as string, Number(fd.get('daily_hours')))
       setResourcePeople(prev => [...prev, created])
       setPersonOpen(false)
     } catch (err) {
@@ -288,12 +409,9 @@ export function ResourcingTimeline({
   async function handleMilestoneSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     const fd = new FormData(e.currentTarget)
-    const projectId = fd.get('project_id') as string
-    const date = fd.get('date') as string
-    const name = fd.get('name') as string
     setSaving(true); setError(null)
     try {
-      const created = await createMilestone(projectId, date, name)
+      const created = await createMilestone(fd.get('project_id') as string, fd.get('date') as string, fd.get('name') as string)
       setMilestones(prev => [...prev, created])
       setMilestoneOpen(false)
     } catch (err) {
@@ -307,15 +425,13 @@ export function ResourcingTimeline({
   }
 
   function exportCSV() {
-    const rowsCsv: string[][] = [['Person', 'Project', 'Start', 'End', 'Hours/Day', 'Note']]
+    const rowsCsv: string[][] = [['Person', 'Project', 'Start', 'End', 'Hours/Day', 'Total Hours', 'Note']]
     const nameFor = (a: ResourceAllocation) =>
       a.person_id ? (people.find(p => p.id === a.person_id)?.name ?? '')
         : (resourcePeople.find(r => r.id === a.resource_person_id)?.name ?? '')
     for (const a of allocations) {
-      rowsCsv.push([
-        nameFor(a), projects.find(p => p.id === a.project_id)?.name ?? '',
-        a.start_date, a.end_date, String(a.hours_per_day), a.note ?? '',
-      ])
+      const total = Number(a.hours_per_day) * workingDaysBetween(a.start_date, a.end_date)
+      rowsCsv.push([nameFor(a), projects.find(p => p.id === a.project_id)?.name ?? '', a.start_date, a.end_date, String(a.hours_per_day), String(total), a.note ?? ''])
     }
     const csv = rowsCsv.map(r => r.map(c => `"${c.replace(/"/g, '""')}"`).join(',')).join('\n')
     const blob = new Blob([csv], { type: 'text/csv' })
@@ -330,8 +446,8 @@ export function ResourcingTimeline({
     .filter(({ day }) => day >= 0 && day < totalDays)
 
   const rangeLabel = `${rangeStart.toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })} – ${rangeEnd.toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' })}`
+  const stepDays = Math.max(7, Math.floor(totalDays / 7 / 2) * 7)
 
-  // People options grouped for the owner selects
   const ownerOptions = (
     <>
       <optgroup label="Team">
@@ -350,10 +466,14 @@ export function ResourcingTimeline({
       {/* Controls */}
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <div className="flex items-center gap-1">
-          <Button variant="outline" size="sm" className="h-8 w-8 p-0" onClick={() => setWeekStart(mondayOf(addDays(weekStart, -28)))}><ChevronLeft size={15} /></Button>
+          <Button variant="outline" size="sm" className="h-8 w-8 p-0" onClick={() => setWeekStart(mondayOf(addDays(rangeStart, -stepDays)))}><ChevronLeft size={15} /></Button>
           <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => setWeekStart(mondayOf(new Date()))}>Today</Button>
-          <Button variant="outline" size="sm" className="h-8 w-8 p-0" onClick={() => setWeekStart(mondayOf(addDays(weekStart, 28)))}><ChevronRight size={15} /></Button>
+          <Button variant="outline" size="sm" className="h-8 w-8 p-0" onClick={() => setWeekStart(mondayOf(addDays(rangeStart, stepDays)))}><ChevronRight size={15} /></Button>
         </div>
+        <select value={zoomIdx} onChange={e => setZoomIdx(Number(e.target.value))}
+          className="h-8 text-sm border border-neutral-200 rounded-[4px] px-2 focus:outline-none focus:ring-1 focus:ring-neutral-900 bg-white">
+          {ZOOMS.map((z, i) => <option key={z.label} value={i}>{z.label}</option>)}
+        </select>
         <span className="text-sm text-neutral-500 font-mono ml-1">{rangeLabel}</span>
         <div className="flex-1" />
         <input type="text" placeholder="Filter by name…" value={nameFilter} onChange={e => setNameFilter(e.target.value)}
@@ -373,29 +493,48 @@ export function ResourcingTimeline({
         <Button size="sm" className="h-8 text-xs gap-1" onClick={() => { setError(null); setAllocDialog({ open: true, edit: null }) }}><Plus size={14} /> Assignment</Button>
       </div>
 
+      <p className="text-xs text-neutral-400 mb-2">Tip: drag an empty row to draw an assignment, drag a bar to move it, or grab either edge to resize.</p>
+
       {/* Timeline grid */}
       <div className="bg-white border border-neutral-200 rounded-[4px] overflow-hidden">
-        <div ref={scrollRef} className="overflow-x-auto">
+        <div className="overflow-x-auto">
           <div style={{ minWidth: LABEL_W + gridW }}>
-            {/* Header */}
+            {/* Week label row */}
             <div className="flex border-b border-neutral-200 bg-neutral-50">
               <div style={{ width: LABEL_W }} className="shrink-0 border-r border-neutral-200" />
               {weeks.map((wk, i) => (
                 <div key={i} style={{ width: COL_W }}
-                  className={`shrink-0 px-2 py-2 text-center border-r border-neutral-100 ${todayMon === wk.getTime() ? 'bg-purple-50' : ''}`}>
+                  className={`shrink-0 px-2 py-1.5 text-center border-r border-neutral-200 ${todayMon === wk.getTime() ? 'bg-purple-50' : ''}`}>
                   <div className="text-xs font-medium text-neutral-700">{wk.toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })}</div>
                 </div>
               ))}
             </div>
+
+            {/* Day-of-week row (fine zoom only) */}
+            {showDayLabels && (
+              <div className="flex border-b border-neutral-200 bg-neutral-50/70">
+                <div style={{ width: LABEL_W }} className="shrink-0 border-r border-neutral-200" />
+                {days.map((d, i) => {
+                  const wknd = d.getDay() === 0 || d.getDay() === 6
+                  return (
+                    <div key={i} style={{ width: DAY_W }}
+                      className={`shrink-0 text-center py-1 border-r border-neutral-100 ${wknd ? 'bg-neutral-200/50' : ''}`}>
+                      <div className="text-[10px] font-medium text-neutral-500 leading-none">{DOW[d.getDay()]}</div>
+                      {DAY_W >= 40 && <div className="text-[10px] text-neutral-400 leading-tight mt-0.5">{d.getDate()}</div>}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
 
             {/* Milestones strip */}
             <div className="flex border-b border-neutral-200 bg-neutral-50/60">
               <div style={{ width: LABEL_W }} className="shrink-0 border-r border-neutral-200 px-3 flex items-center">
                 <span className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wider">Milestones</span>
               </div>
-              <div className="relative" style={{ width: gridW, height: MILESTONE_H }}>
+              <div className="relative" style={{ width: gridW, height: MILESTONE_H, background: weekendBg }}>
                 {weeks.map((wk, i) => (
-                  <div key={i} className="absolute top-0 bottom-0 border-r border-neutral-100" style={{ left: i * COL_W, width: COL_W }} />
+                  <div key={i} className="absolute top-0 bottom-0 border-r border-neutral-200/70" style={{ left: i * COL_W, width: COL_W }} />
                 ))}
                 {visibleMilestones.map(({ m, day }) => (
                   <div key={m.id} className="absolute group -translate-x-1/2 flex flex-col items-center" style={{ left: day * DAY_W + DAY_W / 2, top: 4 }}
@@ -421,6 +560,7 @@ export function ResourcingTimeline({
                 const capacity = row.dailyHours * 5
                 const barsH = laneCount * BAR_H + (laneCount - 1) * LANE_GAP
                 const rowH = ROW_PAD * 2 + barsH + TOTALS_H
+                const isCreatingHere = preview?.createRowKey === row.key
 
                 return (
                   <div key={row.key} className="flex border-b border-neutral-100 last:border-0">
@@ -440,22 +580,38 @@ export function ResourcingTimeline({
                       )}
                     </div>
 
-                    {/* Track */}
-                    <div className="relative" style={{ width: gridW, height: rowH }}>
+                    {/* Track (empty-area drag creates an assignment) */}
+                    <div
+                      className="relative cursor-crosshair"
+                      style={{ width: gridW, height: rowH, background: weekendBg }}
+                      onPointerDown={(e) => {
+                        const rect = e.currentTarget.getBoundingClientRect()
+                        const startDay = Math.max(0, Math.min(totalDays - 1, Math.floor((e.clientX - rect.left) / DAY_W)))
+                        beginDrag(e, { mode: 'create', rowKey: row.key, trackLeft: rect.left, startDay, moved: false })
+                      }}
+                    >
+                      {/* Week separators + today / over-capacity tint (decorative) */}
                       {weeks.map((wk, i) => {
                         const over = totals[i] > capacity
                         return (
                           <div key={i}
-                            className={`absolute top-0 bottom-0 border-r border-neutral-100 ${todayMon === wk.getTime() ? 'bg-purple-50/40' : ''} ${over ? 'bg-red-50/60' : ''}`}
+                            className={`absolute top-0 bottom-0 border-r border-neutral-200/70 pointer-events-none ${todayMon === wk.getTime() ? 'bg-purple-50/40' : ''} ${over ? 'bg-red-50/60' : ''}`}
                             style={{ left: i * COL_W, width: COL_W }} />
                         )
                       })}
+
+                      {/* Create preview ghost */}
+                      {isCreatingHere && preview?.createStartDay != null && (
+                        <div className="absolute rounded-[4px] border-2 border-dashed border-neutral-400 bg-neutral-200/40 pointer-events-none"
+                          style={{ left: preview.createStartDay * DAY_W, width: (preview.createEndDay! - preview.createStartDay! + 1) * DAY_W, top: ROW_PAD, height: BAR_H }} />
+                      )}
 
                       {/* Time off */}
                       {tos.map(to => {
                         const { left, width } = barGeometry(to.start_date, to.end_date)
                         return (
                           <div key={to.id} className="absolute rounded-[3px] flex items-center px-2 group/to"
+                            onPointerDown={e => e.stopPropagation()}
                             style={{ left, width, top: ROW_PAD, height: barsH, backgroundColor: '#f1f5f9',
                               backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(100,116,139,0.12) 5px, rgba(100,116,139,0.12) 10px)',
                               border: '1px solid #e2e8f0' }}
@@ -468,23 +624,36 @@ export function ResourcingTimeline({
 
                       {/* Allocation bars */}
                       {allocs.map(a => {
-                        const { left, width } = barGeometry(a.start_date, a.end_date)
+                        const eff = preview?.id === a.id
+                          ? { start: preview.start_date!, end: preview.end_date! }
+                          : { start: a.start_date, end: a.end_date }
+                        const { left, width } = barGeometry(eff.start, eff.end)
                         const lane = laneOf.get(a.id) ?? 0
+                        const hpd = Number(a.hours_per_day)
+                        const total = hpd * workingDaysBetween(eff.start, eff.end)
+                        const name = projectMap.get(a.project_id)?.project.name ?? 'Project'
                         return (
-                          <button key={a.id} onClick={() => { setError(null); setAllocDialog({ open: true, edit: a }) }}
-                            className="absolute rounded-[4px] flex items-center px-2 text-left hover:brightness-110 transition-all"
+                          <div key={a.id}
+                            onPointerDown={(e) => { e.stopPropagation(); beginDrag(e, { mode: 'move', id: a.id, startX: e.clientX, origStart: a.start_date, origEnd: a.end_date, moved: false }) }}
+                            className="absolute rounded-[4px] flex items-center text-left hover:brightness-110 transition-[filter] cursor-grab active:cursor-grabbing group/bar select-none"
                             style={{ left, width, top: ROW_PAD + lane * (BAR_H + LANE_GAP), height: BAR_H, backgroundColor: projColor(a.project_id) }}
-                            title={`${projectMap.get(a.project_id)?.project.name ?? 'Project'} · ${a.hours_per_day}h/day · ${a.start_date} → ${a.end_date}`}>
-                            <span className="text-[11px] font-medium text-white truncate">
-                              {projectMap.get(a.project_id)?.project.name ?? 'Project'} ({a.hours_per_day}h)
+                            title={`${name} · ${hpd}h/day · ${total}h total · ${eff.start} → ${eff.end}`}>
+                            {/* left resize handle */}
+                            <div onPointerDown={(e) => { e.stopPropagation(); beginDrag(e, { mode: 'left', id: a.id, startX: e.clientX, origStart: a.start_date, origEnd: a.end_date, moved: false }) }}
+                              className="absolute left-0 top-0 bottom-0 cursor-col-resize opacity-0 group-hover/bar:opacity-100 bg-black/20 rounded-l-[4px]" style={{ width: HANDLE_W }} />
+                            <span className="text-[11px] font-medium text-white truncate px-2 pointer-events-none">
+                              {name} · {hpd}h/d · {total}h
                             </span>
-                          </button>
+                            {/* right resize handle */}
+                            <div onPointerDown={(e) => { e.stopPropagation(); beginDrag(e, { mode: 'right', id: a.id, startX: e.clientX, origStart: a.start_date, origEnd: a.end_date, moved: false }) }}
+                              className="absolute right-0 top-0 bottom-0 cursor-col-resize opacity-0 group-hover/bar:opacity-100 bg-black/20 rounded-r-[4px]" style={{ width: HANDLE_W }} />
+                          </div>
                         )
                       })}
 
                       {/* Weekly totals */}
                       {totals.map((t, i) => (
-                        <div key={i} className={`absolute text-center text-[11px] font-mono ${t > capacity ? 'text-red-600 font-semibold' : 'text-neutral-400'}`}
+                        <div key={i} className={`absolute text-center text-[11px] font-mono pointer-events-none ${t > capacity ? 'text-red-600 font-semibold' : 'text-neutral-400'}`}
                           style={{ left: i * COL_W, width: COL_W, bottom: 4 }}
                           title={t > capacity ? `Over capacity (${capacity}h/wk)` : undefined}>
                           {t > 0 ? `${t}h` : ''}
@@ -503,9 +672,9 @@ export function ResourcingTimeline({
       <Dialog open={allocDialog.open} onOpenChange={v => { if (!v) setAllocDialog({ open: false, edit: null }) }}>
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>{allocDialog.edit ? 'Edit assignment' : 'New assignment'}</DialogTitle></DialogHeader>
-          <form onSubmit={handleAllocSubmit} className="space-y-3 pt-1">
+          <form key={allocDialog.edit?.id ?? allocDialog.prefill?.owner ?? 'new'} onSubmit={handleAllocSubmit} className="space-y-3 pt-1">
             <Field label="Person">
-              <select name="owner" defaultValue={allocDialog.edit ? ownerKey(allocDialog.edit) : ''} required className={selectCls}>
+              <select name="owner" defaultValue={allocDialog.edit ? ownerKey(allocDialog.edit) : (allocDialog.prefill?.owner ?? '')} required className={selectCls}>
                 <option value="" disabled>Select person…</option>
                 {ownerOptions}
               </select>
@@ -517,8 +686,8 @@ export function ResourcingTimeline({
               </select>
             </Field>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Start date"><input name="start_date" type="date" defaultValue={allocDialog.edit?.start_date ?? toISO(today)} required className={inputCls} /></Field>
-              <Field label="End date"><input name="end_date" type="date" defaultValue={allocDialog.edit?.end_date ?? toISO(addDays(today, 4))} required className={inputCls} /></Field>
+              <Field label="Start date"><input name="start_date" type="date" defaultValue={allocDialog.edit?.start_date ?? allocDialog.prefill?.start ?? toISO(today)} required className={inputCls} /></Field>
+              <Field label="End date"><input name="end_date" type="date" defaultValue={allocDialog.edit?.end_date ?? allocDialog.prefill?.end ?? toISO(addDays(today, 4))} required className={inputCls} /></Field>
             </div>
             <Field label="Hours per day"><input name="hours_per_day" type="number" min="0" max="24" step="0.5" defaultValue={allocDialog.edit?.hours_per_day ?? 8} required className={inputCls} /></Field>
             <Field label="Note (optional)"><input name="note" type="text" defaultValue={allocDialog.edit?.note ?? ''} className={inputCls} /></Field>
