@@ -238,17 +238,22 @@ export default async function ProjectDetailPage({
   const assignedIds = new Set(assignedPeople.map(a => a.person_id))
   const availablePeople = (allProfiles || []).filter(p => !assignedIds.has(p.id))
 
-  // Labour rows for financials tab (approved only)
+  // Labour rows for financials tab (approved only).
+  // Includes everyone who worked the project: formally assigned people PLUS
+  // anyone with logged time but no assignment (e.g. producers logging billable
+  // hours). Rates fall back to profile rates when there's no assignment override.
   const approvedEntries = (timeEntries || []).filter(e => e.status === 'approved')
-  const labourRows = (assignments || []).map(a => {
-    const profile = profileMap.get(a.person_id)
-    const personEntries = approvedEntries.filter(e => e.person_id === a.person_id)
-    const actualHours = personEntries.reduce((sum, e) => sum + Number(e.hours), 0)
-    const internalRate = effectiveInternalRate(a.person_id)
-    const externalRate = effectiveExternalRate(a.person_id)
-    const estimatedHours = a.estimated_hours ? Number(a.estimated_hours) : null
+  const assignedPersonIds = new Set((assignments || []).map(a => a.person_id))
+
+  const buildLabourRow = (personId: string, estimatedHours: number | null) => {
+    const profile = profileMap.get(personId)
+    const actualHours = approvedEntries
+      .filter(e => e.person_id === personId)
+      .reduce((sum, e) => sum + Number(e.hours), 0)
+    const internalRate = effectiveInternalRate(personId)
+    const externalRate = effectiveExternalRate(personId)
     return {
-      personId: a.person_id,
+      personId,
       name: profile?.name ?? 'Unknown',
       personType: profile?.person_type ?? null,
       estimatedHours,
@@ -259,7 +264,16 @@ export default async function ProjectDetailPage({
       externalRate,
       actualExternalCost: actualHours * externalRate,
     }
-  })
+  }
+
+  const unassignedWithTime = Array.from(new Set(
+    approvedEntries.map(e => e.person_id).filter(id => !assignedPersonIds.has(id))
+  ))
+
+  const labourRows = [
+    ...(assignments || []).map(a => buildLabourRow(a.person_id, a.estimated_hours ? Number(a.estimated_hours) : null)),
+    ...unassignedWithTime.map(id => buildLabourRow(id, null)),
+  ]
 
   // SOW Total for financials (only meaningful for dollar budgets)
   const sowTotal = project.budget_type === 'dollars' ? Number(project.budget_value) : null
