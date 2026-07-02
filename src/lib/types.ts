@@ -13,6 +13,8 @@ export interface Profile {
   avatar_url: string | null
   internal_rate: number | null
   external_rate: number | null
+  daily_hours: number
+  color: string | null
   active: boolean
   created_at: string
   updated_at: string
@@ -28,6 +30,7 @@ export interface Project {
   budget_type: BudgetType | null
   budget_value: number | null
   currency: string
+  color: string | null
   created_by: string | null
   created_at: string
   updated_at: string
@@ -120,14 +123,30 @@ export interface Expense {
   added_at: string
 }
 
-// Phase 2
+export type TimeOffType = 'vacation' | 'holiday' | 'sick' | 'other'
+
 export interface ResourceAllocation {
   id: string
   person_id: string
   project_id: string
-  week_number: number
-  year: number
-  planned_hours: number
+  start_date: string
+  end_date: string
+  hours_per_day: number
+  note: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface TimeOff {
+  id: string
+  person_id: string
+  start_date: string
+  end_date: string
+  type: TimeOffType
+  note: string | null
+  created_by: string | null
+  created_at: string
 }
 
 export interface Milestone {
