@@ -116,6 +116,17 @@ export function PersonForm({ person, onSuccess }: PersonFormProps) {
           />
         </div>
 
+        <div className="space-y-1.5">
+          <Label htmlFor="tags">Tags</Label>
+          <Input
+            id="tags"
+            name="tags"
+            defaultValue={(person?.tags ?? []).join(', ')}
+            placeholder="Designer, Sr, Motion, React (comma-separated)"
+          />
+          <p className="text-xs text-neutral-400">Skills, seniority, discipline — separate with commas. Unlimited.</p>
+        </div>
+
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-1.5">
             <Label htmlFor="internal_rate">Internal Rate ($/hr)</Label>

@@ -4,6 +4,12 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 
+// "Designer, Sr, Motion" → ["Designer","Sr","Motion"] (trimmed, deduped)
+function parseTags(raw: string | null): string[] {
+  if (!raw) return []
+  return Array.from(new Set(raw.split(',').map(t => t.trim()).filter(Boolean)))
+}
+
 export async function createPerson(formData: FormData) {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -23,6 +29,7 @@ export async function createPerson(formData: FormData) {
   if (authError) throw new Error(authError.message)
 
   const title = formData.get('title') as string
+  const tags = parseTags(formData.get('tags') as string)
 
   const { error: profileError } = await admin.from('profiles').insert({
     id: authData.user.id,
@@ -31,6 +38,7 @@ export async function createPerson(formData: FormData) {
     role,
     person_type: personType || null,
     title: title || null,
+    tags,
     internal_rate: internalRate ? Number(internalRate) : null,
     external_rate: externalRate ? Number(externalRate) : null,
     active: true,
@@ -54,6 +62,7 @@ export async function updatePerson(id: string, formData: FormData) {
   const role = formData.get('role') as string
   const personType = formData.get('person_type') as string
   const title = formData.get('title') as string
+  const tags = parseTags(formData.get('tags') as string)
   const internalRate = formData.get('internal_rate') as string
   const externalRate = formData.get('external_rate') as string
 
@@ -62,6 +71,7 @@ export async function updatePerson(id: string, formData: FormData) {
     role,
     person_type: personType || null,
     title: title || null,
+    tags,
     internal_rate: internalRate ? Number(internalRate) : null,
     external_rate: externalRate ? Number(externalRate) : null,
   }).eq('id', id)

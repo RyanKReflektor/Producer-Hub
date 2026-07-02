@@ -25,7 +25,6 @@ const LABEL_W = 236
 const BAR_H = 24
 const LANE_GAP = 4
 const ROW_PAD = 10
-const MILESTONE_H = 28
 const HANDLE_W = 7
 const DRAG_THRESHOLD = 3
 
@@ -77,10 +76,15 @@ interface Row {
   ownerKey?: string
   name: string
   subtitle: string
+  tags: string[]
   color: string
   capacity: number       // hours/week; Infinity for projects
   deletable: boolean
   editable: boolean       // resource people can be edited/renamed
+}
+
+function parseTags(raw: string): string[] {
+  return Array.from(new Set(raw.split(',').map(t => t.trim()).filter(Boolean)))
 }
 
 function ownerKey(a: { person_id: string | null; resource_person_id: string | null }): string {
@@ -175,24 +179,24 @@ export function ResourcingTimeline({
   const rows: Row[] = useMemo(() => {
     const q = nameFilter.toLowerCase()
     let list: Row[]
+    const matches = (row: Row) =>
+      !q || row.name.toLowerCase().includes(q) || row.subtitle.toLowerCase().includes(q) ||
+      row.tags.some(t => t.toLowerCase().includes(q))
     if (groupBy === 'projects') {
       list = projects.map<Row>(p => ({
         key: `proj:${p.id}`, groupKind: 'project', id: p.id,
-        name: p.name, subtitle: p.client, color: projColor(p.id),
+        name: p.name, subtitle: p.client, tags: [], color: projColor(p.id),
         capacity: Infinity, deletable: false, editable: false,
-      })).filter(row => {
-        if (!q) return true
-        return row.name.toLowerCase().includes(q) || row.subtitle.toLowerCase().includes(q)
-      })
+      })).filter(matches)
     } else {
       const profileRows: Row[] = people.map((p, i) => ({
         key: `p:${p.id}`, groupKind: 'person', id: p.id, ownerKey: `p:${p.id}`, name: p.name,
-        subtitle: p.title || (p.person_type ?? '—'), color: p.color || PALETTE[i % PALETTE.length],
+        subtitle: p.title || (p.person_type ?? '—'), tags: p.tags ?? [], color: p.color || PALETTE[i % PALETTE.length],
         capacity: Number(p.daily_hours ?? 8) * 5, deletable: false, editable: false,
       }))
       const resourceRows: Row[] = resourcePeople.map((r, i) => ({
         key: `r:${r.id}`, groupKind: 'person', id: r.id, ownerKey: `r:${r.id}`, name: r.name,
-        subtitle: r.title || (r.kind === 'vendor' ? 'Vendor' : 'Placeholder'),
+        subtitle: r.title || (r.kind === 'vendor' ? 'Vendor' : 'Placeholder'), tags: r.tags ?? [],
         color: r.color || PALETTE[(people.length + i) % PALETTE.length],
         capacity: Number(r.daily_hours ?? 8) * 5, deletable: true, editable: true,
       }))
@@ -206,8 +210,7 @@ export function ResourcingTimeline({
             if (!pr || pr.person_type !== typeFilter) return false
           }
         }
-        if (q && !(row.name.toLowerCase().includes(q) || row.subtitle.toLowerCase().includes(q))) return false
-        return true
+        return matches(row)
       })
     }
     return list.sort((a, b) =>
@@ -269,48 +272,27 @@ export function ResourcingTimeline({
     return laneOf
   }
 
-  function weeklyTotals(row: Row): number[] {
+  // Per-DAY availability summary for a person's week: looks at the busiest
+  // working day (peak hours/day committed) vs their daily capacity.
+  function personWeekSummary(row: Row, wkMonday: Date): { label: string; cls: string } {
+    const dailyH = row.capacity / 5
     const allocs = allocations.filter(a => allocInRow(a, row))
-    return weeks.map(wkMonday => {
-      const wkEnd = addDays(wkMonday, 6)
-      let total = 0
-      for (const a of allocs) {
-        const from = parseISO(a.start_date) > wkMonday ? parseISO(a.start_date) : wkMonday
-        const to = parseISO(a.end_date) < wkEnd ? parseISO(a.end_date) : wkEnd
-        for (let d = new Date(from); d <= to; d = addDays(d, 1)) {
-          const dow = d.getDay()
-          if (dow >= 1 && dow <= 5) total += Number(a.hours_per_day)
-        }
-      }
-      return total
-    })
-  }
-
-  // Working days (Mon–Fri) in a week that are covered by the row's time off
-  function weekOffDays(row: Row, wkMonday: Date): number {
-    if (row.groupKind === 'project' || !row.ownerKey) return 0
     const tos = timeOff.filter(t => ownerKey(t) === row.ownerKey)
-    let off = 0
+    let peak = 0
+    let workDays = 0
     for (let k = 0; k < 5; k++) {
       const iso = toISO(addDays(wkMonday, k))
-      if (tos.some(t => iso >= t.start_date && iso <= t.end_date)) off++
+      if (tos.some(t => iso >= t.start_date && iso <= t.end_date)) continue
+      workDays++
+      let load = 0
+      for (const a of allocs) if (iso >= a.start_date && iso <= a.end_date) load += Number(a.hours_per_day)
+      if (load > peak) peak = load
     }
-    return off
-  }
-
-  // Availability summary block for a week
-  function summaryFor(row: Row, allocated: number, wkMonday: Date): { label: string; cls: string } | null {
-    if (row.groupKind === 'project') {
-      return allocated > 0 ? { label: `${fmtH(allocated)}h`, cls: 'bg-blue-100 text-blue-700' } : null
-    }
-    const dailyH = row.capacity / 5
-    const off = weekOffDays(row, wkMonday)
-    const effCap = dailyH * (5 - off)
-    if (off >= 5 || effCap <= 0) return { label: 'Off', cls: 'bg-neutral-700 text-white' }
-    if (allocated > effCap + 0.001) return { label: `${fmtH(allocated - effCap)}h over`, cls: 'bg-red-500 text-white' }
-    if (Math.abs(allocated - effCap) < 0.001) return { label: 'Full', cls: 'bg-emerald-600 text-white' }
-    const rem = effCap - allocated
-    return { label: `${fmtH(rem)}h open`, cls: allocated === 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-emerald-100 text-emerald-800' }
+    if (workDays === 0) return { label: 'Off', cls: 'bg-neutral-700 text-white' }
+    if (peak > dailyH + 0.001) return { label: `${fmtH(peak - dailyH)}h/d over`, cls: 'bg-red-500 text-white' }
+    if (Math.abs(peak - dailyH) < 0.001) return { label: 'Full', cls: 'bg-emerald-600 text-white' }
+    const rem = dailyH - peak
+    return { label: `${fmtH(rem)}h/d open`, cls: peak === 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-emerald-100 text-emerald-800' }
   }
 
   function barGeometry(startStr: string, endStr: string) {
@@ -463,16 +445,17 @@ export function ResourcingTimeline({
     const name = fd.get('name') as string
     const kind = fd.get('kind') as ResourcePersonKind
     const title = (fd.get('title') as string) ?? ''
+    const tags = parseTags((fd.get('tags') as string) ?? '')
     const color = fd.get('color') as string
     const dailyHours = Number(fd.get('daily_hours'))
     setSaving(true); setError(null)
     try {
       if (personDialog.edit) {
         const id = personDialog.edit.id
-        await updateResourcePerson(id, name, kind, title, color, dailyHours)
-        setResourcePeople(prev => prev.map(r => r.id === id ? { ...r, name, kind, title: title || null, color: color || null, daily_hours: dailyHours } : r))
+        await updateResourcePerson(id, name, kind, title, tags, color, dailyHours)
+        setResourcePeople(prev => prev.map(r => r.id === id ? { ...r, name, kind, title: title || null, tags, color: color || null, daily_hours: dailyHours } : r))
       } else {
-        const created = await createResourcePerson(name, kind, title, color, dailyHours)
+        const created = await createResourcePerson(name, kind, title, tags, color, dailyHours)
         setResourcePeople(prev => [...prev, created])
       }
       setPersonDialog({ open: false, edit: null })
@@ -518,10 +501,6 @@ export function ResourcingTimeline({
     const link = document.createElement('a'); link.href = url; link.download = 'resourcing.csv'; link.click()
     URL.revokeObjectURL(url)
   }
-
-  const visibleMilestones = milestones
-    .map(m => ({ m, day: daysBetween(rangeStart, parseISO(m.date)) }))
-    .filter(({ day }) => day >= 0 && day < totalDays)
 
   const stepDays = Math.max(7, Math.floor(totalDays / 7 / 2) * 7)
 
@@ -646,23 +625,6 @@ export function ResourcingTimeline({
               </div>
             </div>
 
-            {/* Milestones strip */}
-            <div className="flex border-b border-neutral-200 bg-neutral-50/60">
-              <div style={{ width: LABEL_W }} className="shrink-0 border-r border-neutral-200 px-3 flex items-center">
-                <span className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wider">Milestones</span>
-              </div>
-              <div className="relative" style={{ width: gridW, height: MILESTONE_H, background: weekendBg }}>
-                {weeks.map((wk, i) => <div key={i} className="absolute top-0 bottom-0 border-l border-neutral-200/60" style={{ left: i * COL_W }} />)}
-                {visibleMilestones.map(({ m, day }) => (
-                  <div key={m.id} className="absolute group -translate-x-1/2 flex flex-col items-center" style={{ left: day * DAY_W + DAY_W / 2, top: 3 }}
-                    title={`${projects.find(p => p.id === m.project_id)?.name ?? ''} — ${m.name} (${m.date})`}>
-                    <Flag size={13} style={{ color: projColor(m.project_id) }} className="fill-current" />
-                    <button onClick={() => handleDeleteMilestone(m.id)} className="opacity-0 group-hover:opacity-100 text-[9px] text-neutral-400 hover:text-red-600 leading-none mt-0.5">✕</button>
-                  </div>
-                ))}
-              </div>
-            </div>
-
             {/* Rows */}
             {rows.length === 0 ? (
               <div className="px-4 py-10 text-center text-sm text-neutral-400">{groupBy === 'projects' ? 'No projects match this filter.' : 'No people match this filter.'}</div>
@@ -673,8 +635,11 @@ export function ResourcingTimeline({
                 const laneOf = assignLanes(allocs)
                 const laneCount = Math.max(1, ...Array.from(laneOf.values()).map(l => l + 1))
                 const tos = rowTimeOff(row)
-                const totals = weeklyTotals(row)
-                const capacity = row.capacity
+                const isProject = row.groupKind === 'project'
+                const rowMilestones = isProject
+                  ? milestones.map(m => ({ m, day: daysBetween(rangeStart, parseISO(m.date)) }))
+                      .filter(({ m, day }) => m.project_id === row.id && day >= 0 && day < totalDays)
+                  : []
 
                 const summaryTop = ROW_PAD
                 const summaryH = BAR_H
@@ -700,6 +665,13 @@ export function ResourcingTimeline({
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium text-neutral-900 truncate">{row.name}</p>
                         <p className="text-xs text-neutral-400 capitalize truncate">{row.subtitle}</p>
+                        {row.tags.length > 0 && (
+                          <div className="flex gap-1 mt-1 overflow-hidden">
+                            {row.tags.slice(0, 4).map(t => (
+                              <span key={t} className="text-[9px] leading-none px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-500 whitespace-nowrap">{t}</span>
+                            ))}
+                          </div>
+                        )}
                       </div>
                       {row.editable && rp && (
                         <div className="flex items-center gap-1 opacity-0 group-hover/row:opacity-100 shrink-0">
@@ -720,27 +692,31 @@ export function ResourcingTimeline({
                       } : undefined}
                       onClick={!expanded ? () => toggleCollapse(row.key) : undefined}
                     >
-                      {/* Week separators + today / over-capacity tint */}
-                      {weeks.map((wk, i) => {
-                        const over = totals[i] > capacity
-                        return (
-                          <div key={i}
-                            className={`absolute top-0 bottom-0 border-l border-neutral-200/60 pointer-events-none ${todayMon === wk.getTime() ? 'bg-purple-50/40' : ''} ${over ? 'bg-red-50/50' : ''}`}
-                            style={{ left: i * COL_W, width: COL_W }} />
-                        )
-                      })}
+                      {/* Week separators + today tint */}
+                      {weeks.map((wk, i) => (
+                        <div key={i}
+                          className={`absolute top-0 bottom-0 border-l border-neutral-200/60 pointer-events-none ${todayMon === wk.getTime() ? 'bg-purple-50/40' : ''}`}
+                          style={{ left: i * COL_W, width: COL_W }} />
+                      ))}
 
-                      {/* Availability summary lane (always shown) */}
-                      {weeks.map((wk, i) => {
-                        const s = summaryFor(row, totals[i], wk)
-                        if (!s) return null
-                        return (
-                          <div key={i} className={`absolute rounded-[3px] flex items-center justify-center pointer-events-none ${s.cls}`}
-                            style={{ left: i * COL_W + 2, width: COL_W - 4, top: summaryTop, height: summaryH }}>
-                            <span className="text-[10px] font-medium truncate px-1">{s.label}</span>
+                      {/* Top lane — people: weekly availability (per-day); projects: milestones */}
+                      {isProject
+                        ? rowMilestones.map(({ m, day }) => (
+                          <div key={m.id} className="absolute group/ms -translate-x-1/2 flex flex-col items-center" style={{ left: day * DAY_W + DAY_W / 2, top: summaryTop + 2 }}
+                            title={`${m.name} (${m.date})`}>
+                            <Flag size={14} style={{ color: row.color }} className="fill-current" />
+                            <button onClick={(e) => { e.stopPropagation(); handleDeleteMilestone(m.id) }} className="opacity-0 group-hover/ms:opacity-100 text-[9px] text-neutral-400 hover:text-red-600 leading-none mt-0.5">✕</button>
                           </div>
-                        )
-                      })}
+                        ))
+                        : weeks.map((wk, i) => {
+                          const s = personWeekSummary(row, wk)
+                          return (
+                            <div key={i} className={`absolute rounded-[3px] flex items-center justify-center pointer-events-none ${s.cls}`}
+                              style={{ left: i * COL_W + 2, width: COL_W - 4, top: summaryTop, height: summaryH }}>
+                              <span className="text-[10px] font-medium truncate px-1">{s.label}</span>
+                            </div>
+                          )
+                        })}
 
                       {expanded && <>
                         {/* Empty drag lane */}
@@ -878,6 +854,7 @@ export function ResourcingTimeline({
           <form key={personDialog.edit?.id ?? 'new'} onSubmit={handlePersonSubmit} className="space-y-3 pt-1">
             <Field label="Name"><input name="name" type="text" required defaultValue={personDialog.edit?.name ?? ''} placeholder="e.g. Motion Designer (TBD), Acme Studio" className={inputCls} /></Field>
             <Field label="Role"><input name="title" type="text" defaultValue={personDialog.edit?.title ?? ''} placeholder="Designer, Developer, Editor…" className={inputCls} /></Field>
+            <Field label="Tags"><input name="tags" type="text" defaultValue={(personDialog.edit?.tags ?? []).join(', ')} placeholder="Sr, Motion, 3D (comma-separated)" className={inputCls} /></Field>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Kind">
                 <select name="kind" defaultValue={personDialog.edit?.kind ?? 'placeholder'} required className={selectCls}>

@@ -11,6 +11,7 @@ export interface Profile {
   role: UserRole
   person_type: PersonType | null
   title: string | null
+  tags: string[]
   avatar_url: string | null
   internal_rate: number | null
   external_rate: number | null
@@ -132,6 +133,7 @@ export interface ResourcePerson {
   name: string
   kind: ResourcePersonKind
   title: string | null
+  tags: string[]
   color: string | null
   daily_hours: number
   active: boolean

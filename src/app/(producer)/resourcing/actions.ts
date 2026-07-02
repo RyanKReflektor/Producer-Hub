@@ -122,13 +122,14 @@ export async function createResourcePerson(
   name: string,
   kind: ResourcePersonKind,
   title: string,
+  tags: string[],
   color: string,
   dailyHours: number,
 ): Promise<ResourcePerson> {
   const { supabase, userId } = await requireProducer()
   const { data, error } = await supabase
     .from('resource_people')
-    .insert({ name, kind, title: title || null, color: color || null, daily_hours: dailyHours, created_by: userId })
+    .insert({ name, kind, title: title || null, tags, color: color || null, daily_hours: dailyHours, created_by: userId })
     .select('*')
     .single()
   if (error) throw new Error(error.message)
@@ -141,13 +142,14 @@ export async function updateResourcePerson(
   name: string,
   kind: ResourcePersonKind,
   title: string,
+  tags: string[],
   color: string,
   dailyHours: number,
 ): Promise<void> {
   const { supabase } = await requireProducer()
   const { error } = await supabase
     .from('resource_people')
-    .update({ name, kind, title: title || null, color: color || null, daily_hours: dailyHours })
+    .update({ name, kind, title: title || null, tags, color: color || null, daily_hours: dailyHours })
     .eq('id', id)
   if (error) throw new Error(error.message)
   revalidatePath('/resourcing')
