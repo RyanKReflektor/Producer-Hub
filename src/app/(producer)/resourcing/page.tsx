@@ -2,16 +2,21 @@ export const dynamic = 'force-dynamic'
 
 import { createAdminClient } from '@/lib/supabase/admin'
 import { ResourcingTimeline } from '@/components/resourcing/resourcing-timeline'
-import type { Profile, Project, ResourceAllocation, TimeOff } from '@/lib/types'
+import type { Profile, Project, ResourceAllocation, TimeOff, ResourcePerson, Milestone } from '@/lib/types'
 
 export default async function ResourcingPage() {
   const supabase = createAdminClient()
 
-  const [{ data: people }, { data: projects }, { data: allocations }, { data: timeOff }] = await Promise.all([
+  const [
+    { data: people }, { data: projects }, { data: allocations },
+    { data: timeOff }, { data: resourcePeople }, { data: milestones },
+  ] = await Promise.all([
     supabase.from('profiles').select('*').eq('active', true).order('name'),
     supabase.from('projects').select('*').not('status', 'eq', 'completed').order('name'),
     supabase.from('resource_allocations').select('*'),
     supabase.from('time_off').select('*'),
+    supabase.from('resource_people').select('*').eq('active', true).order('name'),
+    supabase.from('milestones').select('*'),
   ])
 
   return (
@@ -27,8 +32,10 @@ export default async function ResourcingPage() {
         <ResourcingTimeline
           people={(people ?? []) as Profile[]}
           projects={(projects ?? []) as Project[]}
+          resourcePeople={(resourcePeople ?? []) as ResourcePerson[]}
           initialAllocations={(allocations ?? []) as ResourceAllocation[]}
           initialTimeOff={(timeOff ?? []) as TimeOff[]}
+          initialMilestones={(milestones ?? []) as Milestone[]}
         />
       </div>
     </>

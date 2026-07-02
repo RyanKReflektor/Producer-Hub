@@ -20,6 +20,7 @@ export async function createProject(formData: FormData) {
     budget_type: budgetType || null,
     budget_value: budgetValue ? Number(budgetValue) : null,
     currency: (formData.get('currency') as string) || 'CAD',
+    color: (formData.get('color') as string) || null,
     created_by: user.id,
   })
 
@@ -45,6 +46,7 @@ export async function updateProject(id: string, formData: FormData) {
     budget_type: budgetType || null,
     budget_value: budgetValue ? Number(budgetValue) : null,
     currency: (formData.get('currency') as string) || 'CAD',
+    color: (formData.get('color') as string) || null,
   }).eq('id', id)
 
   if (error) throw new Error(error.message)

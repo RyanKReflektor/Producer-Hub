@@ -109,6 +109,20 @@ export function ProjectForm({ project, onSuccess }: ProjectFormProps) {
           </div>
         </div>
 
+        <div className="space-y-1.5">
+          <Label htmlFor="color">Timeline Colour</Label>
+          <div className="flex items-center gap-2">
+            <input
+              id="color"
+              name="color"
+              type="color"
+              defaultValue={project?.color ?? '#3E0BE5'}
+              className="h-9 w-16 border border-neutral-200 rounded-[4px] p-1 cursor-pointer"
+            />
+            <span className="text-xs text-neutral-400">Colour of this project's bars on the resourcing timeline</span>
+          </div>
+        </div>
+
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-1.5">
             <Label htmlFor="start_date">Start Date</Label>

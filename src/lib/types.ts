@@ -124,10 +124,23 @@ export interface Expense {
 }
 
 export type TimeOffType = 'vacation' | 'holiday' | 'sick' | 'other'
+export type ResourcePersonKind = 'placeholder' | 'vendor'
+
+export interface ResourcePerson {
+  id: string
+  name: string
+  kind: ResourcePersonKind
+  color: string | null
+  daily_hours: number
+  active: boolean
+  created_by: string | null
+  created_at: string
+}
 
 export interface ResourceAllocation {
   id: string
-  person_id: string
+  person_id: string | null
+  resource_person_id: string | null
   project_id: string
   start_date: string
   end_date: string
@@ -140,7 +153,8 @@ export interface ResourceAllocation {
 
 export interface TimeOff {
   id: string
-  person_id: string
+  person_id: string | null
+  resource_person_id: string | null
   start_date: string
   end_date: string
   type: TimeOffType
