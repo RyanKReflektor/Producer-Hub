@@ -80,12 +80,13 @@ function workingDaysBetween(startISO: string, endISO: string): number {
 
 interface Row {
   key: string
-  kind: 'profile' | 'resource'
-  id: string
+  groupKind: 'person' | 'project'
+  id: string             // person id (profile/resource) or project id
+  ownerKey?: string      // person rows only: 'p:id' / 'r:id'
   name: string
   subtitle: string
   color: string
-  dailyHours: number
+  capacity: number       // hours/week ceiling for over-allocation; Infinity for projects
   deletable: boolean
 }
 
@@ -136,8 +137,9 @@ export function ResourcingTimeline({
   const [milestones, setMilestones] = useState<Milestone[]>(initialMilestones)
   const [nameFilter, setNameFilter] = useState('')
   const [typeFilter, setTypeFilter] = useState<'all' | 'employee' | 'freelancer' | 'placeholder' | 'vendor'>('all')
+  const [groupBy, setGroupBy] = useState<'people' | 'projects'>('people')
 
-  const [allocDialog, setAllocDialog] = useState<{ open: boolean; edit: ResourceAllocation | null; prefill?: { owner: string; start: string; end: string } }>({ open: false, edit: null })
+  const [allocDialog, setAllocDialog] = useState<{ open: boolean; edit: ResourceAllocation | null; prefill?: { owner?: string; projectId?: string; start: string; end: string } }>({ open: false, edit: null })
   const [timeOffOpen, setTimeOffOpen] = useState(false)
   const [personOpen, setPersonOpen] = useState(false)
   const [milestoneOpen, setMilestoneOpen] = useState(false)
@@ -176,32 +178,51 @@ export function ResourcingTimeline({
     return e?.project.color || PALETTE[(e?.idx ?? 0) % PALETTE.length]
   }
 
+  // Owner-key → display name + colour, for bars shown in project view.
+  const personDisplay = useMemo(() => {
+    const m = new Map<string, { name: string; color: string }>()
+    people.forEach((p, i) => m.set(`p:${p.id}`, { name: p.name, color: p.color || PALETTE[i % PALETTE.length] }))
+    resourcePeople.forEach((r, i) => m.set(`r:${r.id}`, { name: r.name, color: r.color || PALETTE[(people.length + i) % PALETTE.length] }))
+    return m
+  }, [people, resourcePeople])
+
   const rows: Row[] = useMemo(() => {
+    const q = nameFilter.toLowerCase()
+    if (groupBy === 'projects') {
+      return projects
+        .map<Row>(p => ({
+          key: `proj:${p.id}`, groupKind: 'project', id: p.id,
+          name: p.name, subtitle: p.client, color: projColor(p.id),
+          capacity: Infinity, deletable: false,
+        }))
+        .filter(row => !q || row.name.toLowerCase().includes(q))
+    }
     const profileRows: Row[] = people.map((p, i) => ({
-      key: `p:${p.id}`, kind: 'profile', id: p.id, name: p.name,
+      key: `p:${p.id}`, groupKind: 'person', id: p.id, ownerKey: `p:${p.id}`, name: p.name,
       subtitle: p.person_type ?? '—', color: p.color || PALETTE[i % PALETTE.length],
-      dailyHours: Number(p.daily_hours ?? 8), deletable: false,
+      capacity: Number(p.daily_hours ?? 8) * 5, deletable: false,
     }))
     const resourceRows: Row[] = resourcePeople.map((r, i) => ({
-      key: `r:${r.id}`, kind: 'resource', id: r.id, name: r.name,
+      key: `r:${r.id}`, groupKind: 'person', id: r.id, ownerKey: `r:${r.id}`, name: r.name,
       subtitle: r.kind === 'vendor' ? 'Vendor' : 'Placeholder',
       color: r.color || PALETTE[(people.length + i) % PALETTE.length],
-      dailyHours: Number(r.daily_hours ?? 8), deletable: true,
+      capacity: Number(r.daily_hours ?? 8) * 5, deletable: true,
     }))
     return [...profileRows, ...resourceRows].filter(row => {
       if (typeFilter !== 'all') {
         if (typeFilter === 'placeholder' || typeFilter === 'vendor') {
-          const rp = resourcePeople.find(r => r.id === row.id && row.kind === 'resource')
+          const rp = resourcePeople.find(r => r.id === row.id)
           if (!rp || rp.kind !== typeFilter) return false
         } else {
-          const pr = people.find(p => p.id === row.id && row.kind === 'profile')
+          const pr = people.find(p => p.id === row.id)
           if (!pr || pr.person_type !== typeFilter) return false
         }
       }
-      if (nameFilter && !row.name.toLowerCase().includes(nameFilter.toLowerCase())) return false
+      if (q && !row.name.toLowerCase().includes(q)) return false
       return true
     })
-  }, [people, resourcePeople, nameFilter, typeFilter])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [people, resourcePeople, projects, nameFilter, typeFilter, groupBy])
 
   const rangeStart = useMemo(() => mondayOf(weekStart), [weekStart])
   const weeks = useMemo(() => Array.from({ length: totalDays / 7 }, (_, i) => addDays(rangeStart, i * 7)), [rangeStart, totalDays])
@@ -212,15 +233,19 @@ export function ResourcingTimeline({
   // Weekend stripes: transparent for Mon–Fri, subtle shade for Sat/Sun of each week
   const weekendBg = `repeating-linear-gradient(90deg, transparent 0px, transparent ${5 * DAY_W}px, rgba(15,23,42,0.045) ${5 * DAY_W}px, rgba(15,23,42,0.045) ${7 * DAY_W}px)`
 
+  function allocInRow(a: ResourceAllocation, row: Row) {
+    return row.groupKind === 'project' ? a.project_id === row.id : ownerKey(a) === row.ownerKey
+  }
   function rowAllocations(row: Row) {
     return allocations
-      .filter(a => ownerKey(a) === row.key)
+      .filter(a => allocInRow(a, row))
       .filter(a => parseISO(a.end_date) >= rangeStart && parseISO(a.start_date) <= rangeEnd)
       .sort((a, b) => a.start_date.localeCompare(b.start_date))
   }
   function rowTimeOff(row: Row) {
+    if (row.groupKind === 'project') return []  // time off is per person, not per project
     return timeOff
-      .filter(t => ownerKey(t) === row.key)
+      .filter(t => ownerKey(t) === row.ownerKey)
       .filter(t => parseISO(t.end_date) >= rangeStart && parseISO(t.start_date) <= rangeEnd)
   }
 
@@ -239,7 +264,7 @@ export function ResourcingTimeline({
   }
 
   function weeklyTotals(row: Row): number[] {
-    const allocs = allocations.filter(a => ownerKey(a) === row.key)
+    const allocs = allocations.filter(a => allocInRow(a, row))
     return weeks.map(wkMonday => {
       const wkEnd = addDays(wkMonday, 6)
       let total = 0
@@ -309,10 +334,12 @@ export function ResourcingTimeline({
       if (d.mode === 'create') {
         const startDay = d.curStartDay ?? d.startDay
         const endDay = d.curEndDay ?? d.startDay
-        setAllocDialog({
-          open: true, edit: null,
-          prefill: { owner: d.rowKey, start: toISO(addDays(rangeStart, startDay)), end: toISO(addDays(rangeStart, endDay)) },
-        })
+        const start = toISO(addDays(rangeStart, startDay))
+        const end = toISO(addDays(rangeStart, endDay))
+        const prefill = d.rowKey.startsWith('proj:')
+          ? { projectId: d.rowKey.slice(5), start, end }
+          : { owner: d.rowKey, start, end }
+        setAllocDialog({ open: true, edit: null, prefill })
         setError(null)
         return
       }
@@ -492,18 +519,27 @@ export function ResourcingTimeline({
           className="h-8 text-sm border border-neutral-200 rounded-[4px] px-2 focus:outline-none focus:ring-1 focus:ring-neutral-900 bg-white">
           {ZOOMS.map((z, i) => <option key={z.label} value={i}>{z.label}</option>)}
         </select>
+        {/* Group by: view rows as people or as projects */}
+        <div className="flex items-center border border-neutral-200 rounded-[4px] overflow-hidden h-8">
+          <button type="button" onClick={() => setGroupBy('people')}
+            className={`px-3 h-full text-xs font-medium ${groupBy === 'people' ? 'bg-neutral-900 text-white' : 'bg-white text-neutral-600 hover:bg-neutral-50'}`}>People</button>
+          <button type="button" onClick={() => setGroupBy('projects')}
+            className={`px-3 h-full text-xs font-medium border-l border-neutral-200 ${groupBy === 'projects' ? 'bg-neutral-900 text-white' : 'bg-white text-neutral-600 hover:bg-neutral-50'}`}>Projects</button>
+        </div>
         <span className="text-sm text-neutral-500 font-mono ml-1">{rangeLabel}</span>
         <div className="flex-1" />
         <input type="text" placeholder="Filter by name…" value={nameFilter} onChange={e => setNameFilter(e.target.value)}
           className="h-8 text-sm border border-neutral-200 rounded-[4px] px-3 focus:outline-none focus:ring-1 focus:ring-neutral-900 w-36" />
-        <select value={typeFilter} onChange={e => setTypeFilter(e.target.value as typeof typeFilter)}
-          className="h-8 text-sm border border-neutral-200 rounded-[4px] px-2 focus:outline-none focus:ring-1 focus:ring-neutral-900 bg-white">
-          <option value="all">All Types</option>
-          <option value="employee">Employees</option>
-          <option value="freelancer">Freelancers</option>
-          <option value="placeholder">Placeholders</option>
-          <option value="vendor">Vendors</option>
-        </select>
+        {groupBy === 'people' && (
+          <select value={typeFilter} onChange={e => setTypeFilter(e.target.value as typeof typeFilter)}
+            className="h-8 text-sm border border-neutral-200 rounded-[4px] px-2 focus:outline-none focus:ring-1 focus:ring-neutral-900 bg-white">
+            <option value="all">All Types</option>
+            <option value="employee">Employees</option>
+            <option value="freelancer">Freelancers</option>
+            <option value="placeholder">Placeholders</option>
+            <option value="vendor">Vendors</option>
+          </select>
+        )}
         <Button variant="outline" size="sm" className="h-8 text-xs gap-1" onClick={exportCSV}><Download size={13} /> CSV</Button>
         <Button variant="outline" size="sm" className="h-8 text-xs gap-1" onClick={() => { setError(null); setPersonOpen(true) }}><UserPlus size={13} /> Person</Button>
         <Button variant="outline" size="sm" className="h-8 text-xs gap-1" onClick={() => { setError(null); setMilestoneOpen(true) }}><Flag size={13} /> Milestone</Button>
@@ -567,7 +603,7 @@ export function ResourcingTimeline({
 
             {/* Person rows */}
             {rows.length === 0 ? (
-              <div className="px-4 py-10 text-center text-sm text-neutral-400">No people match this filter.</div>
+              <div className="px-4 py-10 text-center text-sm text-neutral-400">{groupBy === 'projects' ? 'No projects match this filter.' : 'No people match this filter.'}</div>
             ) : (
               rows.map(row => {
                 const allocs = rowAllocations(row)
@@ -575,7 +611,7 @@ export function ResourcingTimeline({
                 const laneCount = Math.max(1, ...Array.from(laneOf.values()).map(l => l + 1))
                 const tos = rowTimeOff(row)
                 const totals = weeklyTotals(row)
-                const capacity = row.dailyHours * 5
+                const capacity = row.capacity
                 const barsH = laneCount * BAR_H + (laneCount - 1) * LANE_GAP
                 const rowH = ROW_PAD * 2 + barsH + TOTALS_H
                 const isCreatingHere = preview?.createRowKey === row.key
@@ -649,12 +685,19 @@ export function ResourcingTimeline({
                         const lane = laneOf.get(a.id) ?? 0
                         const hpd = Number(a.hours_per_day)
                         const total = hpd * workingDaysBetween(eff.start, eff.end)
-                        const name = projectMap.get(a.project_id)?.project.name ?? 'Project'
+                        // People view: bar = project. Project view: bar = person.
+                        const owner = personDisplay.get(ownerKey(a))
+                        const name = row.groupKind === 'project'
+                          ? (owner?.name ?? 'Person')
+                          : (projectMap.get(a.project_id)?.project.name ?? 'Project')
+                        const barColor = row.groupKind === 'project'
+                          ? (owner?.color ?? PALETTE[0])
+                          : projColor(a.project_id)
                         return (
                           <div key={a.id}
                             onPointerDown={(e) => { e.stopPropagation(); beginDrag(e, { mode: 'move', id: a.id, startX: e.clientX, origStart: a.start_date, origEnd: a.end_date, moved: false }) }}
                             className="absolute rounded-[4px] flex items-center text-left hover:brightness-110 transition-[filter] cursor-grab active:cursor-grabbing group/bar select-none"
-                            style={{ left, width, top: ROW_PAD + lane * (BAR_H + LANE_GAP), height: BAR_H, backgroundColor: projColor(a.project_id) }}
+                            style={{ left, width, top: ROW_PAD + lane * (BAR_H + LANE_GAP), height: BAR_H, backgroundColor: barColor }}
                             title={`${name} · ${hpd}h/day · ${total}h total · ${eff.start} → ${eff.end}`}>
                             {/* left resize handle */}
                             <div onPointerDown={(e) => { e.stopPropagation(); beginDrag(e, { mode: 'left', id: a.id, startX: e.clientX, origStart: a.start_date, origEnd: a.end_date, moved: false }) }}
@@ -690,7 +733,7 @@ export function ResourcingTimeline({
       <Dialog open={allocDialog.open} onOpenChange={v => { if (!v) setAllocDialog({ open: false, edit: null }) }}>
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>{allocDialog.edit ? 'Edit assignment' : 'New assignment'}</DialogTitle></DialogHeader>
-          <form key={allocDialog.edit?.id ?? allocDialog.prefill?.owner ?? 'new'} onSubmit={handleAllocSubmit} className="space-y-3 pt-1">
+          <form key={allocDialog.edit?.id ?? allocDialog.prefill?.owner ?? allocDialog.prefill?.projectId ?? 'new'} onSubmit={handleAllocSubmit} className="space-y-3 pt-1">
             <Field label="Person">
               <select name="owner" defaultValue={allocDialog.edit ? ownerKey(allocDialog.edit) : (allocDialog.prefill?.owner ?? '')} required className={selectCls}>
                 <option value="" disabled>Select person…</option>
@@ -698,7 +741,7 @@ export function ResourcingTimeline({
               </select>
             </Field>
             <Field label="Project">
-              <select name="project_id" defaultValue={allocDialog.edit?.project_id ?? ''} required className={selectCls}>
+              <select name="project_id" defaultValue={allocDialog.edit?.project_id ?? allocDialog.prefill?.projectId ?? ''} required className={selectCls}>
                 <option value="" disabled>Select project…</option>
                 {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
