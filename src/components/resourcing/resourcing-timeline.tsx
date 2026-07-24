@@ -148,6 +148,9 @@ export function ResourcingTimeline({
 
   const dragRef = useRef<Drag | null>(null)
   const [preview, setPreview] = useState<Preview | null>(null)
+  // Lane under the cursor while hovering a track — drives the "drag to add" hint
+  // so it shows only on the hovered row and names the resource on an occupied lane.
+  const [hoverCreate, setHoverCreate] = useState<{ rowKey: string; lane: number; left: number; label: string } | null>(null)
 
   const containerRef = useRef<HTMLDivElement>(null)
   const [containerW, setContainerW] = useState(1200)
@@ -325,6 +328,7 @@ export function ResourcingTimeline({
   function beginDrag(e: React.PointerEvent, drag: Drag) {
     e.preventDefault()
     dragRef.current = drag
+    setHoverCreate(null)
     document.body.style.userSelect = 'none'
 
     const onMove = (ev: PointerEvent) => {
@@ -693,7 +697,6 @@ export function ResourcingTimeline({
                 const summaryH = BAR_H
                 const barsTop = ROW_PAD + summaryH + LANE_GAP
                 const timeOffH = laneCount * BAR_H + (laneCount - 1) * LANE_GAP
-                const emptyLaneTop = barsTop + laneCount * (BAR_H + LANE_GAP)
                 const rowH = expanded
                   ? barsTop + (laneCount + 1) * BAR_H + laneCount * LANE_GAP + ROW_PAD
                   : ROW_PAD * 2 + summaryH
@@ -755,6 +758,32 @@ export function ResourcingTimeline({
                           prefillProjectId: !isProject && target ? target.project_id : undefined,
                         })
                       } : undefined}
+                      onPointerMove={expanded ? (e) => {
+                        if (dragRef.current) return
+                        const rect = e.currentTarget.getBoundingClientRect()
+                        const laneIdx = Math.floor((e.clientY - rect.top - barsTop) / (BAR_H + LANE_GAP))
+                        if (laneIdx < 0 || laneIdx > laneCount) { setHoverCreate(null); return }
+                        // On an occupied lane the hint sits in the gap after the last bar and
+                        // names that resource; on the empty lane it's a generic full-width hint.
+                        const laneAllocs = laneIdx < laneCount
+                          ? allocs.filter(a => (laneOf.get(a.id) ?? 0) === laneIdx)
+                          : []
+                        let last: ResourceAllocation | undefined
+                        for (const a of laneAllocs) if (!last || a.end_date > last.end_date) last = a
+                        let left = 0
+                        let label = 'Drag to add an allocation'
+                        if (last) {
+                          const endDay = Math.min(totalDays - 1, daysBetween(rangeStart, parseISO(last.end_date)))
+                          left = (endDay + 1) * DAY_W
+                          const name = isProject
+                            ? (personDisplay.get(ownerKey(last))?.name ?? 'this person')
+                            : (projectMap.get(last.project_id)?.project.name ?? 'this project')
+                          label = `Drag to add another for ${name}`
+                        }
+                        setHoverCreate(prev => (prev && prev.rowKey === row.key && prev.lane === laneIdx && prev.left === left)
+                          ? prev : { rowKey: row.key, lane: laneIdx, left, label })
+                      } : undefined}
+                      onPointerLeave={() => setHoverCreate(null)}
                       onClick={!expanded ? () => toggleCollapse(row.key) : undefined}
                     >
                       {/* Continuous day/week guides + current-week tint */}
@@ -783,11 +812,11 @@ export function ResourcingTimeline({
                         })}
 
                       {expanded && <>
-                        {/* Empty drag lane */}
-                        {!isCreatingHere && (
-                          <div className="absolute rounded-[4px] border border-dashed border-neutral-300 bg-neutral-50/40 pointer-events-none flex items-center justify-center opacity-0 group-hover/row:opacity-100 transition-opacity"
-                            style={{ left: 0, width: gridW, top: emptyLaneTop, height: BAR_H }}>
-                            <span className="text-[10px] text-neutral-400">Drag to add an allocation</span>
+                        {/* Drag-to-add hint — follows the lane under the cursor on this row */}
+                        {!isCreatingHere && hoverCreate?.rowKey === row.key && (
+                          <div className="absolute rounded-[4px] border border-dashed border-neutral-300 bg-neutral-50/40 pointer-events-none flex items-center justify-start px-2 transition-opacity"
+                            style={{ left: hoverCreate.left, width: Math.max(0, gridW - hoverCreate.left), top: barsTop + hoverCreate.lane * (BAR_H + LANE_GAP), height: BAR_H }}>
+                            <span className="text-[10px] text-neutral-400 truncate">{hoverCreate.label}</span>
                           </div>
                         )}
                         {isCreatingHere && preview?.createStartDay != null && (
