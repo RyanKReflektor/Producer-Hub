@@ -82,22 +82,47 @@ export default function LoginPage() {
 
   return (
     <div className="flex h-screen">
-      {/* Left panel - dark branding */}
-      <div className="hidden lg:flex lg:w-1/2 bg-[#0F0F0F] flex-col justify-between p-12">
-        <div>
-          <div className="flex items-center gap-3 mb-16">
+      {/* Left panel - dark branding with video */}
+      <div className="hidden lg:flex lg:w-[58%] relative overflow-hidden bg-[#0F0F0F] flex-col justify-between p-14">
+        {/* Background video */}
+        <video
+          autoPlay
+          muted
+          loop
+          playsInline
+          className="absolute inset-0 w-full h-full object-cover opacity-60"
+        >
+          <source src="/login-hero.mp4" type="video/mp4" />
+        </video>
+        {/* Readability gradient */}
+        <div className="absolute inset-0 bg-gradient-to-tr from-[#0F0F0F] via-[#0F0F0F]/70 to-transparent" />
+        {/* Oversized diamond, cut in half on the left edge */}
+        <div
+          className="absolute left-0 top-1/2 -translate-x-1/2 -translate-y-1/2 border border-white/15 rotate-45 pointer-events-none"
+          style={{ width: 620, height: 620 }}
+        />
+
+        <div className="relative z-10">
+          <div className="flex items-center gap-4">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo.svg" alt="Spectra" className="w-8 h-8 rounded-[2px]" />
-            <span className="text-white font-semibold text-xl tracking-tight">Spectra</span>
+            <img src="/logo.svg" alt="Spectra" className="w-14 h-14 rounded-[4px]" />
+            <span className="text-white font-semibold text-3xl tracking-tight">Spectra</span>
           </div>
-          <h1 className="text-white text-4xl font-bold leading-tight mb-4">
+        </div>
+
+        <div className="relative z-10">
+          <h1 className="text-white text-6xl font-bold leading-[1.05] tracking-tight mb-6">
             Time tracking for<br />production teams.
           </h1>
-          <p className="text-neutral-400 text-lg">
-            Track hours, manage budgets, and keep projects on time.
-          </p>
+          <div className="flex items-center gap-4">
+            <div className="w-10 h-px bg-white/30" />
+            <p className="text-neutral-300 text-xl">
+              Track hours, manage budgets, and keep projects on time.
+            </p>
+          </div>
         </div>
-        <div className="text-neutral-600 text-sm">
+
+        <div className="relative z-10 text-neutral-500 text-sm">
           &copy; 2024 Spectra. All rights reserved.
         </div>
       </div>
