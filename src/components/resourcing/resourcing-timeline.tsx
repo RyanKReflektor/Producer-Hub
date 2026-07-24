@@ -98,7 +98,7 @@ function parseOwner(key: string): OwnerRef {
 
 type Drag =
   | { mode: 'move' | 'left' | 'right'; id: string; startX: number; origStart: string; origEnd: string; moved: boolean; curStart?: string; curEnd?: string }
-  | { mode: 'create'; rowKey: string; trackLeft: number; startDay: number; moved: boolean; curStartDay?: number; curEndDay?: number }
+  | { mode: 'create'; rowKey: string; trackLeft: number; startDay: number; lane: number; prefillOwner?: string; prefillProjectId?: string; moved: boolean; curStartDay?: number; curEndDay?: number }
 
 interface Preview {
   id?: string
@@ -107,6 +107,7 @@ interface Preview {
   createRowKey?: string
   createStartDay?: number
   createEndDay?: number
+  createLane?: number
 }
 
 interface Props {
@@ -334,7 +335,7 @@ export function ResourcingTimeline({
         if (day !== d.startDay) d.moved = true
         d.curStartDay = Math.min(d.startDay, day)
         d.curEndDay = Math.max(d.startDay, day)
-        setPreview({ createRowKey: d.rowKey, createStartDay: d.curStartDay, createEndDay: d.curEndDay })
+        setPreview({ createRowKey: d.rowKey, createStartDay: d.curStartDay, createEndDay: d.curEndDay, createLane: d.lane })
         return
       }
       const deltaDays = Math.round((ev.clientX - d.startX) / DAY_W)
@@ -366,8 +367,8 @@ export function ResourcingTimeline({
         const start = toISO(addDays(rangeStart, startDay))
         const end = toISO(addDays(rangeStart, endDay))
         const prefill = d.rowKey.startsWith('proj:')
-          ? { projectId: d.rowKey.slice(5), start, end }
-          : { owner: d.rowKey, start, end }
+          ? { projectId: d.rowKey.slice(5), owner: d.prefillOwner, start, end }
+          : { owner: d.rowKey, projectId: d.prefillProjectId, start, end }
         setAllocDialog({ open: true, edit: null, prefill })
         setError(null)
         return
@@ -735,7 +736,24 @@ export function ResourcingTimeline({
                       onPointerDown={expanded ? (e) => {
                         const rect = e.currentTarget.getBoundingClientRect()
                         const startDay = Math.max(0, Math.min(totalDays - 1, Math.floor((e.clientX - rect.left) / DAY_W)))
-                        beginDrag(e, { mode: 'create', rowKey: row.key, trackLeft: rect.left, startDay, moved: false })
+                        // Which lane did the drag start on? If it's an occupied lane, the new
+                        // allocation inherits that lane's resource (person in a project row,
+                        // project in a person row) so you can draw a gap on the same line.
+                        const laneIdx = Math.floor((e.clientY - rect.top - barsTop) / (BAR_H + LANE_GAP))
+                        const laneAllocs = laneIdx >= 0 && laneIdx < laneCount
+                          ? allocs.filter(a => (laneOf.get(a.id) ?? 0) === laneIdx)
+                          : []
+                        let target: ResourceAllocation | undefined
+                        for (const a of laneAllocs) {
+                          if (!target || Math.abs(daysBetween(rangeStart, parseISO(a.start_date)) - startDay)
+                            < Math.abs(daysBetween(rangeStart, parseISO(target.start_date)) - startDay)) target = a
+                        }
+                        beginDrag(e, {
+                          mode: 'create', rowKey: row.key, trackLeft: rect.left, startDay, moved: false,
+                          lane: target ? laneIdx : laneCount,
+                          prefillOwner: isProject && target ? ownerKey(target) : undefined,
+                          prefillProjectId: !isProject && target ? target.project_id : undefined,
+                        })
                       } : undefined}
                       onClick={!expanded ? () => toggleCollapse(row.key) : undefined}
                     >
@@ -774,7 +792,7 @@ export function ResourcingTimeline({
                         )}
                         {isCreatingHere && preview?.createStartDay != null && (
                           <div className="absolute rounded-[4px] border-2 border-dashed border-neutral-400 bg-neutral-200/40 pointer-events-none"
-                            style={{ left: preview.createStartDay * DAY_W, width: (preview.createEndDay! - preview.createStartDay! + 1) * DAY_W, top: emptyLaneTop, height: BAR_H }} />
+                            style={{ left: preview.createStartDay * DAY_W, width: (preview.createEndDay! - preview.createStartDay! + 1) * DAY_W, top: barsTop + (preview.createLane ?? laneCount) * (BAR_H + LANE_GAP), height: BAR_H }} />
                         )}
 
                         {/* Time off */}
