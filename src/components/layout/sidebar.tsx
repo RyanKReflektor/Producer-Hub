@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
@@ -13,9 +14,11 @@ import {
   LogOut,
   Sun,
   Moon,
+  KeyRound,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useTheme } from './theme-context'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import type { Profile } from '@/lib/types'
 
 interface SidebarProps {
@@ -45,11 +48,32 @@ export function Sidebar({ profile, role }: SidebarProps) {
   const { theme, toggle } = useTheme()
   const nav = role === 'producer' ? producerNav : contributorNav
 
+  const [pwOpen, setPwOpen] = useState(false)
+  const [pwSaving, setPwSaving] = useState(false)
+  const [pwError, setPwError] = useState<string | null>(null)
+  const [pwDone, setPwDone] = useState(false)
+
   async function handleSignOut() {
     const supabase = createClient()
     await supabase.auth.signOut()
     router.push('/login')
     router.refresh()
+  }
+
+  async function handleChangePassword(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    const fd = new FormData(e.currentTarget)
+    const password = fd.get('password') as string
+    const confirm = fd.get('confirm') as string
+    setPwError(null)
+    if (password.length < 8) { setPwError('Use at least 8 characters.'); return }
+    if (password !== confirm) { setPwError('Passwords do not match.'); return }
+    setPwSaving(true)
+    const supabase = createClient()
+    const { error } = await supabase.auth.updateUser({ password })
+    setPwSaving(false)
+    if (error) { setPwError(error.message); return }
+    setPwDone(true)
   }
 
   return (
@@ -103,6 +127,13 @@ export function Sidebar({ profile, role }: SidebarProps) {
           {theme === 'dark' ? 'Light mode' : 'Dark mode'}
         </button>
         <button
+          onClick={() => { setPwError(null); setPwDone(false); setPwOpen(true) }}
+          className="flex items-center gap-2 w-full px-2 py-1.5 text-neutral-500 hover:text-neutral-300 text-xs transition-colors rounded-[4px] hover:bg-neutral-900 mb-0.5"
+        >
+          <KeyRound size={13} />
+          Change password
+        </button>
+        <button
           onClick={handleSignOut}
           className="flex items-center gap-2 w-full px-2 py-1.5 text-neutral-500 hover:text-neutral-300 text-xs transition-colors rounded-[4px] hover:bg-neutral-900"
         >
@@ -110,6 +141,48 @@ export function Sidebar({ profile, role }: SidebarProps) {
           Sign out
         </button>
       </div>
+
+      {/* Change password dialog */}
+      <Dialog open={pwOpen} onOpenChange={v => { if (!v) setPwOpen(false) }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Change password</DialogTitle></DialogHeader>
+          {pwDone ? (
+            <div className="space-y-3 pt-1">
+              <div className="p-3 bg-green-50 border border-green-200 rounded-[4px] text-green-700 text-sm">
+                Password updated.
+              </div>
+              <button
+                onClick={() => setPwOpen(false)}
+                className="w-full py-2 px-4 bg-neutral-900 text-white text-sm font-medium rounded-[4px] hover:bg-neutral-700 transition-colors"
+              >
+                Done
+              </button>
+            </div>
+          ) : (
+            <form onSubmit={handleChangePassword} className="space-y-3 pt-1">
+              <div>
+                <label className="block text-xs font-medium text-neutral-700 mb-1">New password</label>
+                <input name="password" type="password" required placeholder="••••••••"
+                  className="w-full text-sm border border-neutral-200 rounded-[4px] px-3 py-2 focus:outline-none focus:ring-1 focus:ring-neutral-900" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-neutral-700 mb-1">Confirm new password</label>
+                <input name="confirm" type="password" required placeholder="••••••••"
+                  className="w-full text-sm border border-neutral-200 rounded-[4px] px-3 py-2 focus:outline-none focus:ring-1 focus:ring-neutral-900" />
+              </div>
+              {pwError && <p className="text-xs text-red-600">{pwError}</p>}
+              <div className="flex justify-end gap-2 pt-1">
+                <button type="button" onClick={() => setPwOpen(false)}
+                  className="px-3 py-1.5 text-sm border border-neutral-200 rounded-[4px] hover:bg-neutral-50">Cancel</button>
+                <button type="submit" disabled={pwSaving}
+                  className="px-3 py-1.5 text-sm bg-neutral-900 text-white rounded-[4px] hover:bg-neutral-700 disabled:opacity-50">
+                  {pwSaving ? 'Saving…' : 'Update password'}
+                </button>
+              </div>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

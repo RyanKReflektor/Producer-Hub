@@ -28,8 +28,9 @@ export async function middleware(request: NextRequest) {
   const { supabaseResponse, user } = await updateSession(request)
   const { pathname } = request.nextUrl
 
-  // Auth callback - always allow
-  if (pathname === '/auth/callback') {
+  // Auth callback + password reset - always allow (recovery token is parsed
+  // client-side from the URL, so the server won't see a session yet).
+  if (pathname === '/auth/callback' || pathname === '/reset-password') {
     return supabaseResponse
   }
 
