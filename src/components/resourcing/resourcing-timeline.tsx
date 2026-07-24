@@ -272,16 +272,31 @@ export function ResourcingTimeline({
       .filter(t => parseISO(t.end_date) >= rangeStart && parseISO(t.start_date) <= rangeEnd)
   }
 
-  function assignLanes(items: ResourceAllocation[]): Map<string, number> {
-    const laneEnds: Date[] = []
-    const laneOf = new Map<string, number>()
+  function assignLanes(items: ResourceAllocation[], keyFn: (a: ResourceAllocation) => string): Map<string, number> {
+    // One block of lanes per resource identity (person in a project row, project in
+    // a person row) so every allocation for a resource stays on that resource's own
+    // line. Within an identity, non-overlapping allocations share a single lane and
+    // overlapping ones stack into sub-lanes.
+    const byKey = new Map<string, ResourceAllocation[]>()
+    const order: string[] = []
     for (const a of items) {
-      const s = parseISO(a.start_date)
-      const e = parseISO(a.end_date)
-      let lane = laneEnds.findIndex(end => s > end)
-      if (lane === -1) { lane = laneEnds.length; laneEnds.push(e) }
-      else laneEnds[lane] = e
-      laneOf.set(a.id, lane)
+      const k = keyFn(a)
+      if (!byKey.has(k)) { byKey.set(k, []); order.push(k) }
+      byKey.get(k)!.push(a)
+    }
+    const laneOf = new Map<string, number>()
+    let base = 0
+    for (const k of order) {
+      const laneEnds: Date[] = []
+      for (const a of byKey.get(k)!) {
+        const s = parseISO(a.start_date)
+        const e = parseISO(a.end_date)
+        let lane = laneEnds.findIndex(end => s > end)
+        if (lane === -1) { lane = laneEnds.length; laneEnds.push(e) }
+        else laneEnds[lane] = e
+        laneOf.set(a.id, base + lane)
+      }
+      base += laneEnds.length
     }
     return laneOf
   }
@@ -684,7 +699,7 @@ export function ResourcingTimeline({
               rows.map(row => {
                 const expanded = !collapsed.has(row.key)
                 const allocs = rowAllocations(row)
-                const laneOf = assignLanes(allocs)
+                const laneOf = assignLanes(allocs, row.groupKind === 'project' ? ownerKey : a => a.project_id)
                 const laneCount = Math.max(1, ...Array.from(laneOf.values()).map(l => l + 1))
                 const tos = rowTimeOff(row)
                 const isProject = row.groupKind === 'project'
