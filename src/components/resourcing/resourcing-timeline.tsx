@@ -38,7 +38,6 @@ const ZOOMS = [
 ]
 
 const PALETTE = ['#3E0BE5', '#0EA5E9', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#14B8A6']
-const DOW = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
 
 const TIME_OFF_LABELS: Record<TimeOffType, string> = {
   vacation: 'Vacation', holiday: 'Holiday', sick: 'Sick', other: 'Time Off',
@@ -228,6 +227,12 @@ export function ResourcingTimeline({
   const rangeStart = useMemo(() => mondayOf(weekStart), [weekStart])
   const weeks = useMemo(() => Array.from({ length: totalDays / 7 }, (_, i) => addDays(rangeStart, i * 7)), [rangeStart, totalDays])
   const days = useMemo(() => Array.from({ length: totalDays }, (_, i) => addDays(rangeStart, i)), [rangeStart, totalDays])
+  // Day indices (from rangeStart) that fall on Sat/Sun — used to crosshatch the
+  // weekend portion of allocation bars.
+  const weekendDayIdx = useMemo(
+    () => days.map((d, i) => (d.getDay() === 0 || d.getDay() === 6 ? i : -1)).filter(i => i >= 0),
+    [days],
+  )
   const rangeEnd = addDays(rangeStart, totalDays - 1)
   const todayMon = mondayOf(today).getTime()
   const todayISO = toISO(today)
@@ -245,7 +250,7 @@ export function ResourcingTimeline({
     return groups
   }, [days])
 
-  const weekendBg = `repeating-linear-gradient(90deg, transparent 0px, transparent ${5 * DAY_W}px, rgba(15,23,42,0.045) ${5 * DAY_W}px, rgba(15,23,42,0.045) ${7 * DAY_W}px)`
+  const weekendBg = `repeating-linear-gradient(90deg, transparent 0px, transparent ${5 * DAY_W}px, rgba(15,23,42,0.06) ${5 * DAY_W}px, rgba(15,23,42,0.06) ${7 * DAY_W}px)`
 
   function allocInRow(a: ResourceAllocation, row: Row) {
     return row.groupKind === 'project' ? a.project_id === row.id : ownerKey(a) === row.ownerKey
@@ -547,10 +552,10 @@ export function ResourcingTimeline({
     return (
       <>
         {withDays && showDayLabels && days.map((_, i) => i === 0 ? null : (
-          <div key={`d${i}`} className="absolute top-0 bottom-0 border-l border-neutral-100 pointer-events-none" style={{ left: i * DAY_W }} />
+          <div key={`d${i}`} className="absolute top-0 bottom-0 border-l border-neutral-200 pointer-events-none" style={{ left: i * DAY_W }} />
         ))}
         {weeks.map((_, i) => i === 0 ? null : (
-          <div key={`w${i}`} className="absolute top-0 bottom-0 border-l border-neutral-200 pointer-events-none" style={{ left: i * COL_W }} />
+          <div key={`w${i}`} className="absolute top-0 bottom-0 border-l border-neutral-300 pointer-events-none" style={{ left: i * COL_W }} />
         ))}
       </>
     )
@@ -622,11 +627,16 @@ export function ResourcingTimeline({
           <div style={{ minWidth: LABEL_W + gridW }}>
             {/* Sticky date header: month → week → day, with continuous column guides */}
             <div className="sticky top-0 z-20 bg-neutral-50">
-              {/* Month band */}
-              <div className="flex border-b border-neutral-100">
-                <div style={{ width: LABEL_W }} className="shrink-0 border-r border-neutral-200" />
-                <div className="relative" style={{ width: gridW, height: 22 }}>
+              {/* Month + week-number band */}
+              <div className="flex border-b border-neutral-200">
+                <div style={{ width: LABEL_W }} className="shrink-0 border-r border-neutral-300" />
+                <div className="relative" style={{ width: gridW, height: 24 }}>
                   {columnGuides(false)}
+                  {weeks.map((wk, i) => (
+                    <span key={`wn${i}`} className="absolute top-1 text-[9px] font-medium text-neutral-400" style={{ left: i * COL_W + 4 }}>
+                      {getISOWeek(wk).week}
+                    </span>
+                  ))}
                   {monthGroups.map(g => (
                     <div key={g.key} className="absolute inset-y-0 flex items-center justify-center" style={{ left: g.startDay * DAY_W, width: g.len * DAY_W }}>
                       <span className="text-xs font-semibold text-neutral-700">
@@ -637,28 +647,22 @@ export function ResourcingTimeline({
                 </div>
               </div>
 
-              {/* Week + day band */}
-              <div className="flex border-b border-neutral-200">
-                <div style={{ width: LABEL_W }} className="shrink-0 border-r border-neutral-200" />
-                <div className="relative" style={{ width: gridW, height: 40, background: weekendBg }}>
+              {/* Day / week band — numbers only; weekends shown by column shading */}
+              <div className="flex border-b border-neutral-300">
+                <div style={{ width: LABEL_W }} className="shrink-0 border-r border-neutral-300" />
+                <div className="relative" style={{ width: gridW, height: 28, background: weekendBg }}>
                   {columnGuides(showDayLabels)}
-                  {weeks.map((wk, i) => (
-                    <span key={`wn${i}`} className="absolute top-1 text-[9px] font-medium text-neutral-400" style={{ left: i * COL_W + 4 }}>
-                      W{getISOWeek(wk).week}
-                    </span>
-                  ))}
                   {showDayLabels
                     ? days.map((d, i) => {
                       const isToday = toISO(d) === todayISO
                       return (
-                        <div key={i} className="absolute flex flex-col items-center justify-end pb-1.5 gap-0.5" style={{ left: i * DAY_W, width: DAY_W, top: 0, bottom: 0 }}>
-                          <span className="text-[9px] text-neutral-400 leading-none">{DOW[d.getDay()]}</span>
-                          <span className={`text-[11px] leading-none flex items-center justify-center ${isToday ? 'bg-[#3E0BE5] text-white rounded-full w-[18px] h-[18px]' : 'text-neutral-600'}`}>{d.getDate()}</span>
+                        <div key={i} className="absolute flex items-center justify-center" style={{ left: i * DAY_W, width: DAY_W, top: 0, bottom: 0 }}>
+                          <span className={`text-[11px] leading-none flex items-center justify-center ${isToday ? 'bg-[#3E0BE5] text-white rounded-full w-[20px] h-[20px]' : 'text-neutral-600'}`}>{d.getDate()}</span>
                         </div>
                       )
                     })
                     : weeks.map((wk, i) => (
-                      <div key={i} className="absolute flex items-end justify-center pb-1.5" style={{ left: i * COL_W, width: COL_W, top: 0, bottom: 0 }}>
+                      <div key={i} className="absolute flex items-center justify-center" style={{ left: i * COL_W, width: COL_W, top: 0, bottom: 0 }}>
                         <span className="text-[11px] text-neutral-600">
                           {COL_W >= 52 ? wk.toLocaleDateString('en-CA', { month: 'short', day: 'numeric' }) : wk.getDate()}
                         </span>
@@ -791,6 +795,8 @@ export function ResourcingTimeline({
                         {allocs.map(a => {
                           const eff = preview?.id === a.id ? { start: preview.start_date!, end: preview.end_date! } : { start: a.start_date, end: a.end_date }
                           const { left, width } = barGeometry(eff.start, eff.end)
+                          const startDay = Math.max(0, daysBetween(rangeStart, parseISO(eff.start)))
+                          const endDay = Math.min(totalDays - 1, daysBetween(rangeStart, parseISO(eff.end)))
                           const lane = laneOf.get(a.id) ?? 0
                           const hpd = Number(a.hours_per_day)
                           const total = hpd * workingDaysBetween(eff.start, eff.end)
@@ -800,9 +806,14 @@ export function ResourcingTimeline({
                           return (
                             <div key={a.id}
                               onPointerDown={(e) => { e.stopPropagation(); beginDrag(e, { mode: 'move', id: a.id, startX: e.clientX, origStart: a.start_date, origEnd: a.end_date, moved: false }) }}
-                              className="absolute rounded-[4px] flex items-center text-left hover:brightness-110 transition-[filter] cursor-grab active:cursor-grabbing group/bar select-none"
+                              className="absolute rounded-[4px] overflow-hidden flex items-center text-left hover:brightness-110 transition-[filter] cursor-grab active:cursor-grabbing group/bar select-none"
                               style={{ left, width, top: barsTop + lane * (BAR_H + LANE_GAP), height: BAR_H, backgroundColor: barColor }}
                               title={`${name} · ${hpd}h/day · ${total}h total · ${eff.start} → ${eff.end}`}>
+                              {/* Weekend days crosshatched — no work scheduled */}
+                              {weekendDayIdx.filter(wi => wi >= startDay && wi <= endDay).map(wi => (
+                                <div key={`we${wi}`} className="absolute top-0 bottom-0 pointer-events-none"
+                                  style={{ left: (wi - startDay) * DAY_W, width: DAY_W, backgroundImage: 'repeating-linear-gradient(45deg, rgba(255,255,255,0.45) 0px, rgba(255,255,255,0.45) 2px, transparent 2px, transparent 6px)' }} />
+                              ))}
                               <div onPointerDown={(e) => { e.stopPropagation(); beginDrag(e, { mode: 'left', id: a.id, startX: e.clientX, origStart: a.start_date, origEnd: a.end_date, moved: false }) }}
                                 className="absolute left-0 top-0 bottom-0 cursor-col-resize opacity-0 group-hover/bar:opacity-100 bg-black/20 rounded-l-[4px]" style={{ width: HANDLE_W }} />
                               <span className="text-[11px] font-medium text-white truncate px-2 pointer-events-none">{name} · {hpd}h/d · {total}h</span>

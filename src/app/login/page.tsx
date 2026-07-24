@@ -3,15 +3,39 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { registerReflektorUser } from './actions'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [name, setName] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-  const [mode, setMode] = useState<'signin' | 'reset'>('signin')
+  const [mode, setMode] = useState<'signin' | 'reset' | 'register'>('signin')
   const [resetSent, setResetSent] = useState(false)
   const router = useRouter()
+
+  async function routeByRole(supabase: ReturnType<typeof createClient>, userId: string) {
+    const { data: profile } = await supabase.from('profiles').select('role').eq('id', userId).single()
+    router.push(profile?.role === 'contributor' ? '/timesheet' : '/dashboard')
+    router.refresh()
+  }
+
+  async function handleRegister(e: React.FormEvent) {
+    e.preventDefault()
+    setLoading(true)
+    setError(null)
+    try {
+      await registerReflektorUser(name, email, password)
+      const supabase = createClient()
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+      if (error) { setError(error.message); setLoading(false); return }
+      if (data.user) await routeByRole(supabase, data.user.id)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not create your account.')
+      setLoading(false)
+    }
+  }
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
@@ -88,12 +112,14 @@ export default function LoginPage() {
           </div>
 
           <h2 className="text-2xl font-bold text-neutral-900 mb-2">
-            {mode === 'signin' ? 'Sign in' : 'Reset password'}
+            {mode === 'signin' ? 'Sign in' : mode === 'register' ? 'Create your account' : 'Reset password'}
           </h2>
           <p className="text-neutral-500 text-sm mb-8">
             {mode === 'signin'
               ? 'Enter your credentials to access your account'
-              : 'Enter your email and we’ll send you a link to set a new password.'}
+              : mode === 'register'
+                ? 'Sign up with your @reflektor.digital email and start right away.'
+                : 'Enter your email and we’ll send you a link to set a new password.'}
           </p>
 
           {mode === 'reset' && resetSent ? (
@@ -109,7 +135,24 @@ export default function LoginPage() {
               </button>
             </div>
           ) : (
-            <form onSubmit={mode === 'signin' ? handleLogin : handleReset} className="space-y-4">
+            <form onSubmit={mode === 'signin' ? handleLogin : mode === 'register' ? handleRegister : handleReset} className="space-y-4">
+              {mode === 'register' && (
+                <div>
+                  <label htmlFor="name" className="block text-sm font-medium text-neutral-700 mb-1.5">
+                    Full name
+                  </label>
+                  <input
+                    id="name"
+                    type="text"
+                    value={name}
+                    onChange={e => setName(e.target.value)}
+                    required
+                    className="w-full px-3 py-2 border border-neutral-200 rounded-[4px] text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900 focus:border-transparent"
+                    placeholder="Jane Smith"
+                  />
+                </div>
+              )}
+
               <div>
                 <label htmlFor="email" className="block text-sm font-medium text-neutral-700 mb-1.5">
                   Email
@@ -121,23 +164,25 @@ export default function LoginPage() {
                   onChange={e => setEmail(e.target.value)}
                   required
                   className="w-full px-3 py-2 border border-neutral-200 rounded-[4px] text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900 focus:border-transparent"
-                  placeholder="you@company.com"
+                  placeholder={mode === 'register' ? 'you@reflektor.digital' : 'you@company.com'}
                 />
               </div>
 
-              {mode === 'signin' && (
+              {mode !== 'reset' && (
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
                     <label htmlFor="password" className="block text-sm font-medium text-neutral-700">
                       Password
                     </label>
-                    <button
-                      type="button"
-                      onClick={() => { setMode('reset'); setError(null) }}
-                      className="text-xs text-[#3E0BE5] hover:underline font-medium"
-                    >
-                      Forgot password?
-                    </button>
+                    {mode === 'signin' && (
+                      <button
+                        type="button"
+                        onClick={() => { setMode('reset'); setError(null) }}
+                        className="text-xs text-[#3E0BE5] hover:underline font-medium"
+                      >
+                        Forgot password?
+                      </button>
+                    )}
                   </div>
                   <input
                     id="password"
@@ -145,9 +190,13 @@ export default function LoginPage() {
                     value={password}
                     onChange={e => setPassword(e.target.value)}
                     required
+                    minLength={mode === 'register' ? 8 : undefined}
                     className="w-full px-3 py-2 border border-neutral-200 rounded-[4px] text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900 focus:border-transparent"
                     placeholder="••••••••"
                   />
+                  {mode === 'register' && (
+                    <p className="text-xs text-neutral-400 mt-1">At least 8 characters.</p>
+                  )}
                 </div>
               )}
 
@@ -163,11 +212,19 @@ export default function LoginPage() {
                 className="w-full py-2 px-4 bg-neutral-900 text-white text-sm font-medium rounded-[4px] hover:bg-neutral-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 {loading
-                  ? (mode === 'signin' ? 'Signing in...' : 'Sending...')
-                  : (mode === 'signin' ? 'Sign in' : 'Send reset link')}
+                  ? (mode === 'signin' ? 'Signing in...' : mode === 'register' ? 'Creating account...' : 'Sending...')
+                  : (mode === 'signin' ? 'Sign in' : mode === 'register' ? 'Create account & sign in' : 'Send reset link')}
               </button>
 
-              {mode === 'reset' && (
+              {mode === 'signin' && (
+                <p className="text-sm text-neutral-500 text-center">
+                  New to Spectra?{' '}
+                  <button type="button" onClick={() => { setMode('register'); setError(null) }} className="text-[#3E0BE5] hover:underline font-medium">
+                    Create an account
+                  </button>
+                </p>
+              )}
+              {(mode === 'register' || mode === 'reset') && (
                 <button
                   type="button"
                   onClick={() => { setMode('signin'); setError(null) }}
