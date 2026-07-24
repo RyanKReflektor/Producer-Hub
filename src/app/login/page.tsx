@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { registerReflektorUser } from './actions'
@@ -13,7 +13,18 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [mode, setMode] = useState<'signin' | 'reset' | 'register'>('signin')
   const [resetSent, setResetSent] = useState(false)
+  const videoRef = useRef<HTMLVideoElement>(null)
   const router = useRouter()
+
+  // React doesn't reliably set the `muted` attribute on the DOM element, which
+  // causes browsers to block autoplay. Force it muted and kick off playback.
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video) return
+    video.muted = true
+    const attempt = video.play()
+    if (attempt) attempt.catch(() => {})
+  }, [])
 
   async function routeByRole(supabase: ReturnType<typeof createClient>, userId: string) {
     const { data: profile } = await supabase.from('profiles').select('role').eq('id', userId).single()
@@ -86,10 +97,12 @@ export default function LoginPage() {
       <div className="hidden lg:flex lg:w-[58%] relative overflow-hidden bg-[#0F0F0F] flex-col justify-between p-14">
         {/* Background video */}
         <video
+          ref={videoRef}
           autoPlay
           muted
           loop
           playsInline
+          preload="auto"
           className="absolute inset-0 w-full h-full object-cover opacity-60"
         >
           <source src="/login-hero.mp4" type="video/mp4" />
