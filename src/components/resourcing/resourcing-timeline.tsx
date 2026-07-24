@@ -1,12 +1,14 @@
 'use client'
 
 import { useState, useMemo, useRef, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import {
   ChevronLeft, ChevronRight, ChevronDown, ChevronsDownUp, Plus, CalendarOff,
-  Download, Trash2, UserPlus, Flag, Pencil, Search, CalendarClock,
+  Download, Trash2, UserPlus, Flag, Pencil, Search, CalendarClock, FolderPlus,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { ProjectForm } from '@/components/projects/project-form'
 import { getISOWeek } from '@/lib/utils'
 import {
   createAllocation, updateAllocation, deleteAllocation,
@@ -139,6 +141,8 @@ export function ResourcingTimeline({
   const [personDialog, setPersonDialog] = useState<{ open: boolean; edit: ResourcePerson | null }>({ open: false, edit: null })
   const [milestoneOpen, setMilestoneOpen] = useState(false)
   const [shiftOpen, setShiftOpen] = useState(false)
+  const [projectOpen, setProjectOpen] = useState(false)
+  const router = useRouter()
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -586,6 +590,7 @@ export function ResourcingTimeline({
           </div>
           <span className="mx-1 h-5 w-px bg-neutral-200" />
           <Button variant="outline" size="sm" className="h-8 text-xs gap-1" onClick={exportCSV}><Download size={13} /> CSV</Button>
+          <Button variant="outline" size="sm" className="h-8 text-xs gap-1" onClick={() => setProjectOpen(true)}><FolderPlus size={13} /> Project</Button>
           <Button variant="outline" size="sm" className="h-8 text-xs gap-1" onClick={() => { setError(null); setPersonDialog({ open: true, edit: null }) }}><UserPlus size={13} /> Person</Button>
           <Button variant="outline" size="sm" className="h-8 text-xs gap-1" onClick={() => { setError(null); setMilestoneOpen(true) }}><Flag size={13} /> Milestone</Button>
           <Button variant="outline" size="sm" className="h-8 text-xs gap-1" onClick={() => { setError(null); setShiftOpen(true) }}><CalendarClock size={13} /> Shift</Button>
@@ -941,6 +946,13 @@ export function ResourcingTimeline({
               <Button type="submit" size="sm" disabled={saving}>{saving ? 'Shifting…' : 'Shift timeline'}</Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* New project dialog — reuses the standard project form */}
+      <Dialog open={projectOpen} onOpenChange={v => { if (!v) setProjectOpen(false) }}>
+        <DialogContent>
+          <ProjectForm onSuccess={() => { setProjectOpen(false); router.refresh() }} />
         </DialogContent>
       </Dialog>
     </div>
