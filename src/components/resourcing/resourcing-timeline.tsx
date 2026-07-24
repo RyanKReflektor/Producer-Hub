@@ -541,10 +541,25 @@ export function ResourcingTimeline({
   const tabCls = (active: boolean) =>
     `px-1 pb-1 text-sm font-medium border-b-2 transition-colors ${active ? 'border-[#3E0BE5] text-[#3E0BE5]' : 'border-transparent text-neutral-500 hover:text-neutral-800'}`
 
+  // Vertical day/week guide lines — rendered identically in every band + track
+  // so they line up into continuous columns through the whole grid.
+  function columnGuides(withDays: boolean) {
+    return (
+      <>
+        {withDays && showDayLabels && days.map((_, i) => i === 0 ? null : (
+          <div key={`d${i}`} className="absolute top-0 bottom-0 border-l border-neutral-100 pointer-events-none" style={{ left: i * DAY_W }} />
+        ))}
+        {weeks.map((_, i) => i === 0 ? null : (
+          <div key={`w${i}`} className="absolute top-0 bottom-0 border-l border-neutral-200 pointer-events-none" style={{ left: i * COL_W }} />
+        ))}
+      </>
+    )
+  }
+
   return (
     <div>
-      {/* Controls — left: views + collapse; right: search/sort/zoom/nav + actions */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-3">
+      {/* Controls — sticky so tools stay in view while scrolling the roster */}
+      <div className="sticky top-0 z-30 bg-[#F8F8F8] -mx-8 px-8 pt-1 pb-2 flex flex-wrap items-center gap-x-4 gap-y-2">
         <div className="flex items-center gap-3">
           <button type="button" className={tabCls(groupBy === 'people')} onClick={() => setGroupBy('people')}>Team</button>
           <button type="button" className={tabCls(groupBy === 'projects')} onClick={() => setGroupBy('projects')}>Projects</button>
@@ -601,50 +616,55 @@ export function ResourcingTimeline({
 
       <p className="text-xs text-neutral-400 mb-2">Tip: expand a row and drag to draw an assignment; drag a bar to move it or grab an edge to resize.</p>
 
-      {/* Timeline grid */}
+      {/* Timeline grid — scrolls internally so the date header can stick */}
       <div ref={containerRef} className="bg-white border border-neutral-200 rounded-[4px] overflow-hidden">
-        <div className="overflow-x-auto">
+        <div className="overflow-auto" style={{ maxHeight: 'calc(100vh - 130px)' }}>
           <div style={{ minWidth: LABEL_W + gridW }}>
-            {/* Month + week-number band */}
-            <div className="flex border-b border-neutral-200 bg-neutral-50">
-              <div style={{ width: LABEL_W }} className="shrink-0 border-r border-neutral-200" />
-              <div className="relative" style={{ width: gridW, height: 22 }}>
-                {monthGroups.map(g => (
-                  <div key={g.key} className="absolute top-0 bottom-0 flex items-center justify-center border-l border-neutral-200"
-                    style={{ left: g.startDay * DAY_W, width: g.len * DAY_W }}>
-                    <span className="text-xs font-semibold text-neutral-700">{g.label}</span>
-                  </div>
-                ))}
-                {weeks.map((wk, i) => (
-                  <span key={i} className="absolute top-0.5 text-[9px] text-neutral-400 pl-1" style={{ left: i * COL_W }}>
-                    W{getISOWeek(wk).week}
-                  </span>
-                ))}
-              </div>
-            </div>
-
-            {/* Day (fine) or week (coarse) row */}
-            <div className="flex border-b border-neutral-200 bg-neutral-50/70">
-              <div style={{ width: LABEL_W }} className="shrink-0 border-r border-neutral-200" />
-              <div className="relative" style={{ width: gridW, height: showDayLabels ? 34 : 24, background: weekendBg }}>
-                {weeks.map((wk, i) => (
-                  <div key={i} className="absolute top-0 bottom-0 border-l border-neutral-200/70" style={{ left: i * COL_W }} />
-                ))}
-                {showDayLabels
-                  ? days.map((d, i) => {
-                    const isToday = toISO(d) === todayISO
-                    return (
-                      <div key={i} className="absolute flex flex-col items-center justify-center gap-0.5" style={{ left: i * DAY_W, width: DAY_W, top: 0, bottom: 0 }}>
-                        <span className="text-[9px] text-neutral-400 leading-none">{DOW[d.getDay()]}</span>
-                        <span className={`text-[11px] leading-none flex items-center justify-center ${isToday ? 'bg-[#3E0BE5] text-white rounded-full w-[18px] h-[18px]' : 'text-neutral-600'}`}>{d.getDate()}</span>
-                      </div>
-                    )
-                  })
-                  : weeks.map((wk, i) => (
-                    <div key={i} className="absolute flex items-center justify-center" style={{ left: i * COL_W, width: COL_W, top: 0, bottom: 0 }}>
-                      <span className="text-[11px] text-neutral-600">{wk.toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })}</span>
+            {/* Sticky date header: month → week → day, with continuous column guides */}
+            <div className="sticky top-0 z-20 bg-neutral-50">
+              {/* Month band */}
+              <div className="flex border-b border-neutral-100">
+                <div style={{ width: LABEL_W }} className="shrink-0 border-r border-neutral-200" />
+                <div className="relative" style={{ width: gridW, height: 22 }}>
+                  {columnGuides(false)}
+                  {monthGroups.map(g => (
+                    <div key={g.key} className="absolute inset-y-0 flex items-center justify-center" style={{ left: g.startDay * DAY_W, width: g.len * DAY_W }}>
+                      <span className="text-xs font-semibold text-neutral-700">
+                        {g.label}{g.startDay === 0 || g.label === 'Jan' ? ` ${g.yr}` : ''}
+                      </span>
                     </div>
                   ))}
+                </div>
+              </div>
+
+              {/* Week + day band */}
+              <div className="flex border-b border-neutral-200">
+                <div style={{ width: LABEL_W }} className="shrink-0 border-r border-neutral-200" />
+                <div className="relative" style={{ width: gridW, height: 40, background: weekendBg }}>
+                  {columnGuides(showDayLabels)}
+                  {weeks.map((wk, i) => (
+                    <span key={`wn${i}`} className="absolute top-1 text-[9px] font-medium text-neutral-400" style={{ left: i * COL_W + 4 }}>
+                      W{getISOWeek(wk).week}
+                    </span>
+                  ))}
+                  {showDayLabels
+                    ? days.map((d, i) => {
+                      const isToday = toISO(d) === todayISO
+                      return (
+                        <div key={i} className="absolute flex flex-col items-center justify-end pb-1.5 gap-0.5" style={{ left: i * DAY_W, width: DAY_W, top: 0, bottom: 0 }}>
+                          <span className="text-[9px] text-neutral-400 leading-none">{DOW[d.getDay()]}</span>
+                          <span className={`text-[11px] leading-none flex items-center justify-center ${isToday ? 'bg-[#3E0BE5] text-white rounded-full w-[18px] h-[18px]' : 'text-neutral-600'}`}>{d.getDate()}</span>
+                        </div>
+                      )
+                    })
+                    : weeks.map((wk, i) => (
+                      <div key={i} className="absolute flex items-end justify-center pb-1.5" style={{ left: i * COL_W, width: COL_W, top: 0, bottom: 0 }}>
+                        <span className="text-[11px] text-neutral-600">
+                          {COL_W >= 52 ? wk.toLocaleDateString('en-CA', { month: 'short', day: 'numeric' }) : wk.getDate()}
+                        </span>
+                      </div>
+                    ))}
+                </div>
               </div>
             </div>
 
@@ -715,12 +735,11 @@ export function ResourcingTimeline({
                       } : undefined}
                       onClick={!expanded ? () => toggleCollapse(row.key) : undefined}
                     >
-                      {/* Week separators + today tint */}
-                      {weeks.map((wk, i) => (
-                        <div key={i}
-                          className={`absolute top-0 bottom-0 border-l border-neutral-200/60 pointer-events-none ${todayMon === wk.getTime() ? 'bg-purple-50/40' : ''}`}
-                          style={{ left: i * COL_W, width: COL_W }} />
-                      ))}
+                      {/* Continuous day/week guides + current-week tint */}
+                      {columnGuides(true)}
+                      {weeks.map((wk, i) => todayMon === wk.getTime() ? (
+                        <div key={`t${i}`} className="absolute top-0 bottom-0 bg-purple-50/40 pointer-events-none" style={{ left: i * COL_W, width: COL_W }} />
+                      ) : null)}
 
                       {/* Top lane — people: weekly availability (per-day); projects: milestones */}
                       {isProject
