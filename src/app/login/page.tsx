@@ -95,25 +95,28 @@ export default function LoginPage() {
     <div className="flex h-screen">
       {/* Left panel - dark branding with video */}
       <div className="hidden lg:flex lg:w-[58%] relative overflow-hidden bg-[#0F0F0F] flex-col justify-between p-14">
-        {/* Background video */}
-        <video
-          ref={videoRef}
-          autoPlay
-          muted
-          loop
-          playsInline
-          preload="auto"
-          className="absolute inset-0 w-full h-full object-cover opacity-60"
-        >
-          <source src="/login-hero.mp4" type="video/mp4" />
-        </video>
-        {/* Readability gradient */}
-        <div className="absolute inset-0 bg-gradient-to-tr from-[#0F0F0F] via-[#0F0F0F]/70 to-transparent" />
-        {/* Oversized diamond, cut in half on the left edge */}
+        {/* Oversized diamond with the video clipped inside — centered on the left
+            edge so it's cut cleanly in half. The wrapper is a rotated square; the
+            video is counter-rotated (and overscaled) so its content stays upright. */}
         <div
-          className="absolute left-0 top-1/2 -translate-x-1/2 -translate-y-1/2 border border-white/15 rotate-45 pointer-events-none"
-          style={{ width: 620, height: 620 }}
-        />
+          className="absolute left-0 top-1/2 -translate-x-1/2 -translate-y-1/2 rotate-45 overflow-hidden border border-white/15 pointer-events-none"
+          style={{ width: 'min(82vh, 820px)', height: 'min(82vh, 820px)' }}
+        >
+          <video
+            ref={videoRef}
+            autoPlay
+            muted
+            loop
+            playsInline
+            preload="auto"
+            className="absolute inset-0 w-full h-full object-cover opacity-80"
+            style={{ transform: 'rotate(-45deg) scale(1.45)' }}
+          >
+            <source src="/login-hero.mp4" type="video/mp4" />
+          </video>
+        </div>
+        {/* Readability gradient */}
+        <div className="absolute inset-0 bg-gradient-to-tr from-[#0F0F0F] via-[#0F0F0F]/70 to-transparent pointer-events-none" />
 
         <div className="relative z-10">
           <div className="flex items-center gap-4">
